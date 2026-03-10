@@ -1,0 +1,219 @@
+import { createServer } from 'node:http'
+import { randomUUID } from 'node:crypto'
+
+const PORT = Number(process.env.PORT || 8787)
+const ORIGIN = process.env.ALLOW_ORIGIN || '*'
+const SESSION_TTL_MS = 1000 * 60 * 3
+
+const sessions = new Map()
+
+function createSession() {
+  const sessionId = randomUUID()
+  const challenge = randomUUID().replaceAll('-', '').slice(0, 24)
+  const expiresAt = Date.now() + SESSION_TTL_MS
+  const session = {
+    sessionId,
+    challenge,
+    expiresAt,
+    status: 'waiting',
+    browserName: 'Browser',
+    phoneEndpoint: null,
+    subscribers: new Set(),
+  }
+
+  sessions.set(sessionId, session)
+  return session
+}
+
+function sendJson(response, statusCode, payload) {
+  response.writeHead(statusCode, {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': ORIGIN,
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Cache-Control': 'no-store',
+  })
+  response.end(JSON.stringify(payload))
+}
+
+function sendSseEvent(response, event, payload) {
+  response.write(`event: ${event}\n`)
+  response.write(`data: ${JSON.stringify(payload)}\n\n`)
+}
+
+function broadcast(session, event, payload) {
+  for (const subscriber of session.subscribers) {
+    sendSseEvent(subscriber, event, payload)
+  }
+}
+
+function parseJsonBody(request) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+
+    request.on('data', (chunk) => chunks.push(chunk))
+    request.on('end', () => {
+      try {
+        const text = Buffer.concat(chunks).toString('utf8')
+        resolve(text ? JSON.parse(text) : {})
+      } catch (error) {
+        reject(error)
+      }
+    })
+    request.on('error', reject)
+  })
+}
+
+function getSession(sessionId) {
+  const session = sessions.get(sessionId)
+
+  if (!session) {
+    return { error: 'Session not found', statusCode: 404 }
+  }
+
+  if (session.expiresAt <= Date.now()) {
+    sessions.delete(sessionId)
+    return { error: 'Session expired', statusCode: 410 }
+  }
+
+  return { session }
+}
+
+setInterval(() => {
+  const now = Date.now()
+
+  for (const [sessionId, session] of sessions.entries()) {
+    if (session.expiresAt <= now) {
+      broadcast(session, 'expired', { sessionId })
+      for (const subscriber of session.subscribers) {
+        subscriber.end()
+      }
+      sessions.delete(sessionId)
+    }
+  }
+}, 1000 * 15)
+
+const server = createServer(async (request, response) => {
+  const url = new URL(request.url || '/', `http://${request.headers.host}`)
+
+  if (request.method === 'OPTIONS') {
+    response.writeHead(204, {
+      'Access-Control-Allow-Origin': ORIGIN,
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    })
+    response.end()
+    return
+  }
+
+  if (request.method === 'GET' && url.pathname === '/health') {
+    sendJson(response, 200, { ok: true })
+    return
+  }
+
+  if (request.method === 'POST' && url.pathname === '/api/pairings') {
+    const session = createSession()
+    const pairingUrl = `easychat://pair?sessionId=${session.sessionId}&challenge=${session.challenge}&serverUrl=${encodeURIComponent(
+      `http://${request.headers.host}`,
+    )}`
+
+    sendJson(response, 201, {
+      sessionId: session.sessionId,
+      challenge: session.challenge,
+      expiresAt: session.expiresAt,
+      status: session.status,
+      pairingUrl,
+    })
+    return
+  }
+
+  if (request.method === 'GET' && url.pathname.startsWith('/api/pairings/')) {
+    const [, , , sessionId, action] = url.pathname.split('/')
+    const { session, error, statusCode } = getSession(sessionId)
+
+    if (!session) {
+      sendJson(response, statusCode, { error })
+      return
+    }
+
+    if (action === 'events') {
+      response.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        'Access-Control-Allow-Origin': ORIGIN,
+      })
+      response.write('\n')
+      session.subscribers.add(response)
+      sendSseEvent(response, 'status', {
+        sessionId: session.sessionId,
+        status: session.status,
+        phoneEndpoint: session.phoneEndpoint,
+      })
+
+      request.on('close', () => {
+        session.subscribers.delete(response)
+      })
+      return
+    }
+
+    sendJson(response, 200, {
+      sessionId: session.sessionId,
+      challenge: session.challenge,
+      expiresAt: session.expiresAt,
+      status: session.status,
+      phoneEndpoint: session.phoneEndpoint,
+    })
+    return
+  }
+
+  if (request.method === 'POST' && url.pathname.match(/^\/api\/pairings\/[^/]+\/register$/)) {
+    const sessionId = url.pathname.split('/')[3]
+    const { session, error, statusCode } = getSession(sessionId)
+
+    if (!session) {
+      sendJson(response, statusCode, { error })
+      return
+    }
+
+    try {
+      const body = await parseJsonBody(request)
+
+      if (body.challenge !== session.challenge) {
+        sendJson(response, 401, { error: 'Invalid challenge' })
+        return
+      }
+
+      session.status = 'phone_registered'
+      session.phoneEndpoint = {
+        deviceName: body.deviceName || 'Phone',
+        phoneIp: body.phoneIp,
+        phonePort: body.phonePort,
+        token: body.token,
+        wifiName: body.wifiName || 'Unknown Wi-Fi',
+        protocolVersion: body.protocolVersion || 1,
+      }
+
+      broadcast(session, 'status', {
+        sessionId: session.sessionId,
+        status: session.status,
+        phoneEndpoint: session.phoneEndpoint,
+      })
+
+      sendJson(response, 200, {
+        ok: true,
+        status: session.status,
+        phoneEndpoint: session.phoneEndpoint,
+      })
+    } catch {
+      sendJson(response, 400, { error: 'Invalid JSON payload' })
+    }
+    return
+  }
+
+  sendJson(response, 404, { error: 'Not found' })
+})
+
+server.listen(PORT, () => {
+  console.log(`pairing_service listening on http://localhost:${PORT}`)
+})

@@ -9,6 +9,7 @@ function App() {
   const currentPageOrigin = window.location.origin
   const pairingServiceOrigin = import.meta.env.VITE_PAIRING_API_URL || currentPageOrigin
   const {
+    canCompose,
     canSend,
     connectionAddress,
     conversationTitle,
@@ -44,6 +45,7 @@ function App() {
         />
       ) : (
         <ChatScreen
+          canCompose={canCompose}
           canSend={canSend}
           connectionAddress={connectionAddress}
           conversationTitle={conversationTitle}

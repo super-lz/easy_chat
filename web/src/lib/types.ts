@@ -3,6 +3,7 @@ export type Message = {
   sender: 'browser' | 'phone' | 'system'
   type: 'text' | 'file'
   content: string
+  compositionId?: string
   batchId?: string
   batchTotal?: number
   meta?: string

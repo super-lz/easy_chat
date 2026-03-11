@@ -52,7 +52,8 @@ export function useEasyChat() {
 
   const conversationTitle = endpoint?.deviceName ?? '我的手机'
   const connectionAddress = endpoint ? `${endpoint.phoneIp}:${endpoint.phonePort}` : '等待手机共享地址'
-  const canSend = phase === 'chat'
+  const canCompose = phase === 'chat'
+  const canSend = canCompose && (draft.trim().length > 0 || pendingAttachments.length > 0)
   const visibleMessages = useMemo(
     () => messages.filter((message) => settings.showSystemMessages || message.sender !== 'system'),
     [messages, settings.showSystemMessages],
@@ -293,12 +294,15 @@ export function useEasyChat() {
 
   const sendMessage = async () => {
     const transport = transportRef.current
+    const text = draft.trim()
+
     if (!transport?.isOpen()) {
       setError('当前连接不可用。')
       return
     }
 
     if (pendingAttachments.length > 0) {
+      const compositionId = `compose-${Date.now()}`
       const batch: FileBatch | undefined =
         pendingAttachments.length > 1
           ? { id: `batch-${Date.now()}`, total: pendingAttachments.length }
@@ -307,17 +311,31 @@ export function useEasyChat() {
       for (const attachment of pendingAttachments) {
         const outgoing = await transport.queueFile(attachment.file, batch)
         const localDownloadUrl = URL.createObjectURL(attachment.file)
-        setMessages((current) => [...current, createOutgoingFileMessage(outgoing, localDownloadUrl)])
+        setMessages((current) => [...current, createOutgoingFileMessage(outgoing, localDownloadUrl, compositionId)])
+      }
+
+      if (text) {
+        transport.sendText(text)
+        setMessages((current) => [
+          ...current,
+          {
+            id: `m-${Date.now()}-caption`,
+            sender: 'browser',
+            type: 'text',
+            content: text,
+            compositionId,
+          },
+        ])
       }
 
       setPendingAttachments((current) => {
         releaseAttachmentPreviews(current)
         return []
       })
+      setDraft('')
       return
     }
 
-    const text = draft.trim()
     if (!text) return
 
     transport.sendText(text)
@@ -354,7 +372,6 @@ export function useEasyChat() {
 
     if (nextFiles.length === 0) return
 
-    setDraft('')
     setPendingAttachments((current) => [...current, ...nextFiles])
   }
 
@@ -373,6 +390,7 @@ export function useEasyChat() {
   }
 
   return {
+    canCompose,
     canSend,
     connectionAddress,
     conversationTitle,
@@ -454,12 +472,14 @@ function createOutgoingFileMessage(
     size: number
   },
   downloadUrl: string,
+  compositionId?: string,
 ): Message {
   return {
     id: event.transferId,
     sender: 'browser',
     type: 'file',
     content: event.file.name,
+    compositionId,
     batchId: event.batchId,
     batchTotal: event.batchTotal,
     meta: `${formatBytes(event.size)} • 0%`,

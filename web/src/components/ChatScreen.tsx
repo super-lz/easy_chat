@@ -1,10 +1,12 @@
-import type { ChangeEvent, RefObject } from 'react'
+import { useMemo, useState, type ChangeEvent, type RefObject } from 'react'
 import type { AppSettings, Message, PendingAttachment } from '../lib/types'
 import { ChatComposer } from './ChatComposer'
+import { ImagePreviewLightbox, type PreviewSlide } from './ImagePreviewLightbox'
 import { MessageList } from './MessageList'
 import { ChatSidebar } from './ChatSidebar'
 
 type ChatScreenProps = {
+  canCompose: boolean
   canSend: boolean
   connectionAddress: string
   conversationTitle: string
@@ -28,6 +30,7 @@ type ChatScreenProps = {
 }
 
 export function ChatScreen({
+  canCompose,
   canSend,
   connectionAddress,
   conversationTitle,
@@ -49,6 +52,23 @@ export function ChatScreen({
   onRemovePendingAttachment,
   onSendMessage,
 }: ChatScreenProps) {
+  const [previewRequest, setPreviewRequest] = useState<{
+    key: string
+    slides: PreviewSlide[]
+    index: number
+  } | null>(null)
+  const hasPreviewOpen = previewRequest !== null
+  const openImagePreview = useMemo(
+    () => (slides: PreviewSlide[], index: number) => {
+      setPreviewRequest({
+        key: `${Date.now()}-${slides.map((slide) => slide.id).join('|')}`,
+        slides,
+        index,
+      })
+    },
+    [],
+  )
+
   return (
     <section className="chat-layout">
       <ChatSidebar
@@ -70,9 +90,10 @@ export function ChatScreen({
           </button>
         </header>
 
-        <MessageList messages={messages} />
+        <MessageList messages={messages} onOpenImagePreview={openImagePreview} />
 
         <ChatComposer
+          canCompose={canCompose}
           canSend={canSend}
           draft={draft}
           fileInputRef={fileInputRef}
@@ -81,10 +102,20 @@ export function ChatScreen({
           onAppendFiles={onAppendFiles}
           onDraftChange={onDraftChange}
           onFileChange={onFileChange}
+          onOpenImagePreview={openImagePreview}
           onOpenFilePicker={onOpenFilePicker}
           onRemovePendingAttachment={onRemovePendingAttachment}
           onSendMessage={onSendMessage}
         />
+
+        {hasPreviewOpen ? (
+          <ImagePreviewLightbox
+            key={previewRequest.key}
+            openIndex={previewRequest.index}
+            slides={previewRequest.slides}
+            onClose={() => setPreviewRequest(null)}
+          />
+        ) : null}
       </section>
     </section>
   )

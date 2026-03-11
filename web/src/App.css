@@ -208,6 +208,11 @@
   color: rgba(24, 33, 43, 0.16);
 }
 
+.pairing-diagnostics {
+  display: grid;
+  gap: 10px;
+}
+
 .sidebar {
   display: flex;
   flex-direction: column;
@@ -262,6 +267,35 @@
   border-top: 1px solid var(--border);
   overflow: hidden;
   justify-items: start;
+}
+
+.diagnostic-card {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  max-width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  border-radius: 16px;
+}
+
+.diagnostic-card span {
+  font-size: 0.74rem;
+  color: var(--text-soft);
+}
+
+.diagnostic-card code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  color: #364152;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-card-error {
+  border-color: rgba(208, 111, 91, 0.28);
+  background: #fff7f4;
 }
 
 .sidebar-status strong {

@@ -1,11 +1,24 @@
 type ChatSidebarProps = {
+  connectionAddress: string
   conversationTitle: string
   directStatus: string
+  error: string | null
   localDeviceName: string
+  pageOrigin: string
+  pairingServiceOrigin: string
   onDisconnect: () => void
 }
 
-export function ChatSidebar({ conversationTitle, directStatus, localDeviceName, onDisconnect }: ChatSidebarProps) {
+export function ChatSidebar({
+  connectionAddress,
+  conversationTitle,
+  directStatus,
+  error,
+  localDeviceName,
+  pageOrigin,
+  pairingServiceOrigin,
+  onDisconnect,
+}: ChatSidebarProps) {
   const connectionState =
     directStatus === '已直连'
       ? { label: '已连接', className: 'is-connected' }
@@ -16,7 +29,7 @@ export function ChatSidebar({ conversationTitle, directStatus, localDeviceName, 
   return (
     <aside className="sidebar">
       <div className="sidebar-top">
-        <h1 className="sidebar-brand">Easy Chat</h1>
+        <h1 className="sidebar-brand">EasyChat</h1>
       </div>
 
       <div className="sidebar-spacer" />
@@ -38,6 +51,28 @@ export function ChatSidebar({ conversationTitle, directStatus, localDeviceName, 
         <div className="device-card">
           <strong>{conversationTitle}</strong>
         </div>
+        <div className="diagnostic-card">
+          <span>页面</span>
+          <code>{pageOrigin}</code>
+        </div>
+        <div className="diagnostic-card">
+          <span>配对入口</span>
+          <code>{pairingServiceOrigin}</code>
+        </div>
+        <div className="diagnostic-card">
+          <span>目标直连</span>
+          <code>{connectionAddress}</code>
+        </div>
+        <div className="diagnostic-card">
+          <span>状态</span>
+          <code>{directStatus}</code>
+        </div>
+        {error ? (
+          <div className="diagnostic-card diagnostic-card-error">
+            <span>错误</span>
+            <code>{error}</code>
+          </div>
+        ) : null}
         <button className="disconnect-button dock-disconnect" type="button" onClick={onDisconnect}>
           断开连接
         </button>

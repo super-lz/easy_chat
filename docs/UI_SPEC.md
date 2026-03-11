@@ -1,4 +1,4 @@
-# Easy Chat UI Spec
+# EasyChat UI Spec
 
 ## 1. Product Feel
 
@@ -84,7 +84,7 @@ Purpose:
 
 Layout:
 
-- Top: app title `Easy Chat`
+- Top: app title `EasyChat`
 - Subtitle: `Same Wi-Fi, direct transfer`
 - Primary card: `Connect to Computer`
 - Secondary entry: `Recent History`
@@ -107,7 +107,7 @@ Layout:
 - Framing box centered
 - Top bar with close button
 - Bottom helper text:
-  - `Open Easy Chat in your computer browser`
+  - `Open EasyChat in your computer browser`
   - `Scan the QR code shown on screen`
 
 States:
@@ -270,7 +270,7 @@ Layout:
 - Inline banner or centered empty state
 - Copy:
   - `Connection lost`
-  - `Keep Easy Chat open on your phone and reconnect`
+  - `Keep EasyChat open on your phone and reconnect`
 - Action:
   - `Return to Pairing`
 

@@ -5,15 +5,27 @@ type PairingScreenProps = {
   browserName: string
   countdown: number
   isLoading: boolean
+  pairingServiceOrigin: string
+  pageOrigin: string
   session: PairingSession | null
 }
 
-export function PairingScreen({ browserName, countdown, isLoading, session }: PairingScreenProps) {
+export function PairingScreen({
+  browserName,
+  countdown,
+  isLoading,
+  pairingServiceOrigin,
+  pageOrigin,
+  session,
+}: PairingScreenProps) {
+  const isLocalOnlyHost =
+    window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+
   return (
     <section className="pairing-shell">
       <div className="pairing-card">
         <div className="pairing-copy-block">
-          <h1 className="pairing-title">East Chat</h1>
+          <h1 className="pairing-title">EasyChat</h1>
         </div>
 
         <div className="qr-stage pairing-qr-stage">
@@ -29,11 +41,24 @@ export function PairingScreen({ browserName, countdown, isLoading, session }: Pa
         <div className="pairing-copy-bottom">
           <p className="pairing-note">请使用手机 App 扫描二维码</p>
           <p className="pairing-subnote">同一 Wi‑Fi 下可直接建立连接</p>
+          {isLocalOnlyHost ? (
+            <p className="error-copy">当前页面是通过 localhost 打开的，手机无法访问。请改用电脑的局域网地址打开此页面后再扫码。</p>
+          ) : null}
         </div>
 
         <div className="pairing-meta-inline">
           <span>有效期 {countdown}s</span>
           <span>{browserName}</span>
+        </div>
+        <div className="pairing-diagnostics">
+          <div className="diagnostic-card">
+            <span>页面</span>
+            <code>{pageOrigin}</code>
+          </div>
+          <div className="diagnostic-card">
+            <span>配对入口</span>
+            <code>{pairingServiceOrigin}</code>
+          </div>
         </div>
       </div>
     </section>

@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { formatBytes } from '../lib/format'
 import {
+  DirectTransportClient,
+  type FileBatch,
+  type FileProgressEvent,
+  type IncomingFileStart,
+} from '../lib/directTransport'
+import { createPairingSession, subscribeToPairingSession } from '../lib/pairingClient'
+import {
   clearStoredEndpoint,
   initialMessages,
   persistEndpoint,
@@ -8,21 +15,11 @@ import {
   restoreSettings,
   restoreStoredEndpoint,
 } from '../lib/storage'
-import type {
-  AppSettings,
-  DirectPayload,
-  IncomingTransfer,
-  Message,
-  OutgoingTransfer,
-  PendingAttachment,
-  PairingSession,
-  PhoneEndpoint,
-} from '../lib/types'
+import type { AppSettings, Message, PendingAttachment, PairingSession, PhoneEndpoint } from '../lib/types'
 
-const PAIRING_API =
-  import.meta.env.VITE_PAIRING_API_URL ??
-  `${window.location.protocol}//${window.location.hostname}:8787`
+const PAIRING_API = import.meta.env.VITE_PAIRING_API_URL ?? ''
 const MAX_RECONNECT_ATTEMPTS = 5
+const DIRECT_CONNECT_TIMEOUT_MS = 5000
 
 export type AppPhase = 'pairing' | 'connecting' | 'chat'
 
@@ -38,14 +35,14 @@ export function useEasyChat() {
   const [isLoading, setIsLoading] = useState(true)
   const [directStatus, setDirectStatus] = useState('等待手机共享地址')
   const [settings, setSettings] = useState<AppSettings>(() => restoreSettings())
-  const eventSourceRef = useRef<EventSource | null>(null)
-  const directSocketRef = useRef<WebSocket | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const reconnectTimerRef = useRef<number | null>(null)
   const reconnectAttemptsRef = useRef(0)
   const shouldReconnectRef = useRef(true)
-  const incomingTransfersRef = useRef<Map<string, IncomingTransfer>>(new Map())
-  const outgoingTransfersRef = useRef<Map<string, OutgoingTransfer>>(new Map())
+  const unsubscribePairingRef = useRef<(() => void) | null>(null)
+  const sessionRef = useRef<PairingSession | null>(null)
+  const settingsRef = useRef(settings)
+  const transportRef = useRef<DirectTransportClient | null>(null)
 
   const sessionHint = useMemo(() => {
     if (phase === 'pairing') return '等待手机扫码'
@@ -66,7 +63,124 @@ export function useEasyChat() {
   )
 
   useEffect(() => {
-    const restored = restoreStoredEndpoint()
+    settingsRef.current = settings
+  }, [settings])
+
+  useEffect(() => {
+    sessionRef.current = session
+  }, [session])
+
+  useEffect(() => {
+    transportRef.current = new DirectTransportClient({
+      onOpen: (nextEndpoint) => {
+        reconnectAttemptsRef.current = 0
+        setError(null)
+        setDirectStatus('已直连')
+        setPhase('chat')
+        setMessages((current) => [
+          ...current,
+          {
+            id: `system-open-${Date.now()}`,
+            sender: 'system',
+            type: 'text',
+            content: `已连接到 ${nextEndpoint.phoneIp}:${nextEndpoint.phonePort}`,
+          },
+        ])
+      },
+      onTextMessage: (text) => {
+        setMessages((current) => [
+          ...current,
+          {
+            id: `phone-${Date.now()}`,
+            sender: 'phone',
+            type: 'text',
+            content: text,
+          },
+        ])
+      },
+      onIncomingFileStart: (event) => {
+        setMessages((current) => [...current, createIncomingFileMessage(event)])
+      },
+      onIncomingFileProgress: (event) => {
+        replaceTransferProgress(setMessages, event)
+      },
+      onIncomingFileComplete: (event) => {
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === event.transferId
+              ? {
+                  ...message,
+                  meta: `${formatBytes(event.size)} • 已接收`,
+                  progress: 1,
+                  downloadUrl: event.downloadUrl,
+                  mimeType: event.mimeType,
+                }
+              : message,
+          ),
+        )
+      },
+      onOutgoingFileProgress: (event) => {
+        replaceTransferProgress(setMessages, event)
+      },
+      onOutgoingFileDelivered: ({ transferId, size }) => {
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === transferId
+              ? {
+                  ...message,
+                  meta: `${formatBytes(size)} • 已发送`,
+                  progress: 1,
+                }
+              : message,
+          ),
+        )
+      },
+      onSystemMessage: (text) => {
+        appendSystemMessage(setMessages, text)
+      },
+      onProtocolError: (text) => {
+        appendSystemMessage(setMessages, text)
+      },
+      onConnectionError: () => {
+        setDirectStatus('连接失败')
+        setError('无法连接到手机，请确认手机仍在当前 Wi‑Fi 下且 App 保持打开。')
+      },
+      onClose: ({ opened }) => {
+        if (
+          shouldReconnectRef.current &&
+          settingsRef.current.autoReconnect &&
+          endpoint &&
+          reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS
+        ) {
+          reconnectAttemptsRef.current += 1
+          const attempt = reconnectAttemptsRef.current
+          setDirectStatus(`重连中 (${attempt}/${MAX_RECONNECT_ATTEMPTS})`)
+          reconnectTimerRef.current = window.setTimeout(() => {
+            connectDirectTransport(endpoint)
+          }, Math.min(1500 * attempt, 5000))
+          return
+        }
+
+        setDirectStatus(opened ? '连接已断开' : '连接失败')
+        if (!opened) {
+          setError('无法连接到手机，请确认手机仍在当前 Wi‑Fi 下且 App 保持打开。')
+        }
+
+        if (!opened && sessionRef.current === null) {
+          clearStoredEndpoint()
+          void createSession(false)
+        }
+      },
+    })
+
+    return () => {
+      transportRef.current?.disconnect()
+      transportRef.current = null
+    }
+  }, [endpoint])
+
+  useEffect(() => {
+    const restored = settings.rememberConnection ? restoreStoredEndpoint() : null
     if (restored) {
       setEndpoint(restored)
       setDirectStatus('正在恢复上一次连接')
@@ -77,11 +191,11 @@ export function useEasyChat() {
     }
 
     return () => {
-      eventSourceRef.current?.close()
-      directSocketRef.current?.close()
+      unsubscribePairingRef.current?.()
+      transportRef.current?.disconnect()
       if (reconnectTimerRef.current) window.clearTimeout(reconnectTimerRef.current)
     }
-  }, [])
+  }, [settings.rememberConnection])
 
   useEffect(() => {
     if (!session) return
@@ -96,20 +210,24 @@ export function useEasyChat() {
   useEffect(() => {
     if (!endpoint) return
 
-    persistEndpoint(endpoint)
+    if (settings.rememberConnection) {
+      persistEndpoint(endpoint)
+    } else {
+      clearStoredEndpoint()
+    }
+
     setPhase('connecting')
     setDirectStatus('正在连接手机')
-    connectDirectSocket(endpoint)
-
-    return () => {
-      directSocketRef.current?.close()
-      directSocketRef.current = null
-    }
+    connectDirectTransport(endpoint)
   }, [endpoint, settings.rememberConnection])
 
   useEffect(() => {
     persistSettings(settings)
   }, [settings])
+
+  function connectDirectTransport(nextEndpoint: PhoneEndpoint) {
+    transportRef.current?.connect(nextEndpoint, DIRECT_CONNECT_TIMEOUT_MS)
+  }
 
   function releaseAttachmentPreviews(items: PendingAttachment[]) {
     for (const item of items) {
@@ -119,34 +237,20 @@ export function useEasyChat() {
     }
   }
 
-  function replaceTransferProgress(id: string, progress: number, size: number) {
-    setMessages((current) =>
-      current.map((message) =>
-        message.id === id
-          ? {
-              ...message,
-              meta: `${formatBytes(size)} • ${Math.round(progress * 100)}%`,
-              progress,
-            }
-          : message,
-      ),
-    )
-  }
-
   async function createSession(clearRemembered = true) {
-    eventSourceRef.current?.close()
+    unsubscribePairingRef.current?.()
     shouldReconnectRef.current = false
-    directSocketRef.current?.close()
-    directSocketRef.current = null
+    transportRef.current?.disconnect()
+    transportRef.current?.resetTransfers()
     reconnectAttemptsRef.current = 0
     if (reconnectTimerRef.current) {
       window.clearTimeout(reconnectTimerRef.current)
       reconnectTimerRef.current = null
     }
-    incomingTransfersRef.current.clear()
-    outgoingTransfersRef.current.clear()
+
     setIsLoading(true)
     setError(null)
+    setSession(null)
     setEndpoint(null)
     setDirectStatus('等待手机共享地址')
     setMessages(initialMessages)
@@ -160,16 +264,22 @@ export function useEasyChat() {
     }
 
     try {
-      const response = await fetch(`${PAIRING_API}/api/pairings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      })
-      if (!response.ok) throw new Error('创建配对会话失败')
-
-      const data = (await response.json()) as PairingSession
+      const data = await createPairingSession(PAIRING_API)
       setSession(data)
       setCountdown(Math.max(0, Math.ceil((data.expiresAt - Date.now()) / 1000)))
-      subscribeToSession(data.sessionId)
+      unsubscribePairingRef.current = subscribeToPairingSession(PAIRING_API, data.sessionId, {
+        onStatus: (payload) => {
+          if (payload.phoneEndpoint) {
+            setEndpoint(payload.phoneEndpoint)
+          }
+        },
+        onExpired: () => {
+          void createSession(false)
+        },
+        onError: () => {
+          setError('配对服务连接已断开。')
+        },
+      })
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : '未知配对错误')
     } finally {
@@ -181,265 +291,25 @@ export function useEasyChat() {
     void createSession()
   }
 
-  function subscribeToSession(sessionId: string) {
-    const source = new EventSource(`${PAIRING_API}/api/pairings/${sessionId}/events`)
-    let isExpectedClose = false
-    eventSourceRef.current = source
-
-    source.addEventListener('status', (event) => {
-      const payload = JSON.parse((event as MessageEvent).data) as {
-        status: PairingSession['status']
-        phoneEndpoint?: PhoneEndpoint
-      }
-      if (payload.phoneEndpoint) {
-        setEndpoint(payload.phoneEndpoint)
-      }
-    })
-
-    source.addEventListener('expired', () => {
-      isExpectedClose = true
-      source.close()
-      void createSession(false)
-    })
-
-    source.onerror = () => {
-      if (isExpectedClose) return
-      setError('配对服务连接已断开。')
-      source.close()
-    }
-  }
-
-  function connectDirectSocket(nextEndpoint: PhoneEndpoint) {
-    shouldReconnectRef.current = true
-    directSocketRef.current?.close()
-
-    const socket = new WebSocket(
-      `ws://${nextEndpoint.phoneIp}:${nextEndpoint.phonePort}/ws?token=${encodeURIComponent(nextEndpoint.token)}`,
-    )
-    directSocketRef.current = socket
-
-    socket.onopen = () => {
-      reconnectAttemptsRef.current = 0
-      setError(null)
-      setDirectStatus('已直连')
-      setPhase('chat')
-      setMessages((current) => [
-        ...current,
-        {
-          id: `system-open-${Date.now()}`,
-          sender: 'system',
-          type: 'text',
-          content: `已连接到 ${nextEndpoint.phoneIp}:${nextEndpoint.phonePort}`,
-        },
-      ])
-
-      for (const [transferId, outgoing] of outgoingTransfersRef.current.entries()) {
-        socket.send(
-          JSON.stringify({
-            type: 'file_offer',
-            transferId,
-            sender: 'browser',
-            batchId: outgoing.batchId,
-            batchTotal: outgoing.batchTotal,
-            name: outgoing.file.name,
-            mimeType: outgoing.file.type || 'application/octet-stream',
-            size: outgoing.file.size,
-            chunkSize: outgoing.chunkSize,
-            totalChunks: outgoing.totalChunks,
-          }),
-        )
-      }
-    }
-
-    socket.onmessage = (event) => {
-      const payload = JSON.parse(event.data) as DirectPayload
-
-      if (payload.type === 'message') {
-        setMessages((current) => [
-          ...current,
-          {
-            id: `phone-${Date.now()}`,
-            sender: 'phone',
-            type: 'text',
-            content: payload.text,
-          },
-        ])
-        return
-      }
-
-      if (payload.type === 'file_offer') {
-        if (!incomingTransfersRef.current.has(payload.transferId)) {
-          incomingTransfersRef.current.set(payload.transferId, {
-            name: payload.name,
-            size: payload.size,
-            mimeType: payload.mimeType,
-            batchId: payload.batchId,
-            batchTotal: payload.batchTotal,
-            chunkSize: payload.chunkSize,
-            totalChunks: payload.totalChunks,
-            chunks: Array.from({ length: payload.totalChunks }, () => null),
-          })
-          setMessages((current) => [
-            ...current,
-            {
-              id: payload.transferId,
-              sender: 'phone',
-              type: 'file',
-              content: payload.name,
-              batchId: payload.batchId,
-              batchTotal: payload.batchTotal,
-              meta: `${formatBytes(payload.size)} • 0%`,
-              progress: 0,
-              mimeType: payload.mimeType,
-            },
-          ])
-        }
-
-        const transfer = incomingTransfersRef.current.get(payload.transferId)
-        let nextChunk = 0
-        while (transfer && nextChunk < transfer.totalChunks && transfer.chunks[nextChunk]) {
-          nextChunk += 1
-        }
-        socket.send(JSON.stringify({ type: 'file_resume', transferId: payload.transferId, nextChunk }))
-        return
-      }
-
-      if (payload.type === 'file_resume') {
-        const outgoing = outgoingTransfersRef.current.get(payload.transferId)
-        if (outgoing) {
-          replaceTransferProgress(
-            payload.transferId,
-            outgoing.totalChunks === 0 ? 0 : payload.nextChunk / outgoing.totalChunks,
-            outgoing.file.size,
-          )
-          sendFileChunks(payload.transferId, outgoing, payload.nextChunk)
-        }
-        return
-      }
-
-      if (payload.type === 'file_chunk') {
-        const transfer = incomingTransfersRef.current.get(payload.transferId)
-        if (transfer && payload.chunkIndex >= 0 && payload.chunkIndex < transfer.totalChunks) {
-          const chunk = Uint8Array.from(atob(payload.chunk), (char) => char.charCodeAt(0))
-          transfer.chunks[payload.chunkIndex] ??= chunk
-          const loaded = transfer.chunks.reduce((sum, chunkPart) => sum + (chunkPart?.byteLength ?? 0), 0)
-          replaceTransferProgress(payload.transferId, loaded / transfer.size, transfer.size)
-
-          let nextChunk = 0
-          while (nextChunk < transfer.totalChunks && transfer.chunks[nextChunk]) {
-            nextChunk += 1
-          }
-          socket.send(JSON.stringify({ type: 'file_resume', transferId: payload.transferId, nextChunk }))
-        }
-        return
-      }
-
-      if (payload.type === 'file_complete') {
-        const transfer = incomingTransfersRef.current.get(payload.transferId)
-        if (transfer) {
-          const nextChunk = transfer.chunks.findIndex((chunk) => chunk === null)
-          if (nextChunk !== -1) {
-            socket.send(JSON.stringify({ type: 'file_resume', transferId: payload.transferId, nextChunk }))
-            return
-          }
-
-          const blob = new Blob(
-            transfer.chunks.map((chunk) => {
-              const safeChunk = chunk ?? new Uint8Array()
-              const buffer = new ArrayBuffer(safeChunk.byteLength)
-              new Uint8Array(buffer).set(safeChunk)
-              return buffer
-            }),
-            { type: transfer.mimeType },
-          )
-          const downloadUrl = URL.createObjectURL(blob)
-          setMessages((current) =>
-            current.map((message) =>
-              message.id === payload.transferId
-                ? {
-                    ...message,
-                    meta: `${formatBytes(transfer.size)} • 已接收`,
-                    progress: 1,
-                    downloadUrl,
-                    mimeType: transfer.mimeType,
-                  }
-                : message,
-            ),
-          )
-          incomingTransfersRef.current.delete(payload.transferId)
-          socket.send(JSON.stringify({ type: 'file_received', transferId: payload.transferId }))
-        }
-        return
-      }
-
-      if (payload.type === 'file_received') {
-        const outgoing = outgoingTransfersRef.current.get(payload.transferId)
-        if (outgoing) {
-          outgoingTransfersRef.current.delete(payload.transferId)
-          setMessages((current) =>
-            current.map((message) =>
-              message.id === payload.transferId
-                ? {
-                    ...message,
-                    meta: `${formatBytes(outgoing.file.size)} • 已发送`,
-                    progress: 1,
-                  }
-                : message,
-            ),
-          )
-        }
-        return
-      }
-
-      if (payload.type === 'system' || payload.type === 'error') {
-        setMessages((current) => [
-          ...current,
-          {
-            id: `system-${Date.now()}`,
-            sender: 'system',
-            type: 'text',
-            content: payload.text,
-          },
-        ])
-      }
-    }
-
-    socket.onclose = () => {
-      if (shouldReconnectRef.current && settings.autoReconnect && reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
-        reconnectAttemptsRef.current += 1
-        const attempt = reconnectAttemptsRef.current
-        setDirectStatus(`重连中 (${attempt}/${MAX_RECONNECT_ATTEMPTS})`)
-        reconnectTimerRef.current = window.setTimeout(() => {
-          connectDirectSocket(nextEndpoint)
-        }, Math.min(1500 * attempt, 5000))
-        return
-      }
-
-      setDirectStatus('连接已断开')
-    }
-
-    socket.onerror = () => {
-      setDirectStatus('连接失败')
-      setError('无法连接到手机，请确认手机仍在当前 Wi‑Fi 下且 App 保持打开。')
-    }
-  }
-
   const sendMessage = async () => {
-    const socket = directSocketRef.current
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
+    const transport = transportRef.current
+    if (!transport?.isOpen()) {
       setError('当前连接不可用。')
       return
     }
 
     if (pendingAttachments.length > 0) {
-      const batch =
+      const batch: FileBatch | undefined =
         pendingAttachments.length > 1
           ? { id: `batch-${Date.now()}`, total: pendingAttachments.length }
           : undefined
 
       for (const attachment of pendingAttachments) {
-        await sendFile(attachment.file, batch)
+        const outgoing = await transport.queueFile(attachment.file, batch)
+        const localDownloadUrl = URL.createObjectURL(attachment.file)
+        setMessages((current) => [...current, createOutgoingFileMessage(outgoing, localDownloadUrl)])
       }
+
       setPendingAttachments((current) => {
         releaseAttachmentPreviews(current)
         return []
@@ -450,7 +320,7 @@ export function useEasyChat() {
     const text = draft.trim()
     if (!text) return
 
-    socket.send(JSON.stringify({ type: 'message', text }))
+    transport.sendText(text)
     setMessages((current) => [
       ...current,
       {
@@ -461,84 +331,6 @@ export function useEasyChat() {
       },
     ])
     setDraft('')
-  }
-
-  const sendFile = async (file: File, batch?: { id: string; total: number }) => {
-    const socket = directSocketRef.current
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      setError('当前连接不可用。')
-      return
-    }
-
-    const transferId = `file-${Date.now()}`
-    const chunkSize = 32 * 1024
-    const bytes = new Uint8Array(await file.arrayBuffer())
-    const totalChunks = Math.ceil(bytes.length / chunkSize)
-
-    outgoingTransfersRef.current.set(transferId, {
-      file,
-      bytes,
-      batchId: batch?.id,
-      batchTotal: batch?.total,
-      chunkSize,
-      totalChunks,
-    })
-
-    const localDownloadUrl = URL.createObjectURL(file)
-
-    setMessages((current) => [
-      ...current,
-      {
-        id: transferId,
-        sender: 'browser',
-        type: 'file',
-        content: file.name,
-        batchId: batch?.id,
-        batchTotal: batch?.total,
-        meta: `${formatBytes(file.size)} • 0%`,
-        progress: 0,
-        mimeType: file.type || 'application/octet-stream',
-        downloadUrl: localDownloadUrl,
-      },
-    ])
-
-    socket.send(
-      JSON.stringify({
-        type: 'file_offer',
-        transferId,
-        sender: 'browser',
-        batchId: batch?.id,
-        batchTotal: batch?.total,
-        name: file.name,
-        mimeType: file.type || 'application/octet-stream',
-        size: file.size,
-        chunkSize,
-        totalChunks,
-      }),
-    )
-  }
-
-  function sendFileChunks(transferId: string, outgoing: OutgoingTransfer, startChunk: number) {
-    const socket = directSocketRef.current
-    if (!socket || socket.readyState !== WebSocket.OPEN) return
-
-    if (startChunk >= outgoing.totalChunks) {
-      socket.send(JSON.stringify({ type: 'file_complete', transferId }))
-      return
-    }
-
-    for (let chunkIndex = startChunk; chunkIndex < outgoing.totalChunks; chunkIndex += 1) {
-      const start = chunkIndex * outgoing.chunkSize
-      const end = Math.min(start + outgoing.chunkSize, outgoing.bytes.length)
-      const chunk = outgoing.bytes.slice(start, end)
-      let binary = ''
-      chunk.forEach((value) => {
-        binary += String.fromCharCode(value)
-      })
-      socket.send(JSON.stringify({ type: 'file_chunk', transferId, chunkIndex, chunk: btoa(binary) }))
-    }
-
-    socket.send(JSON.stringify({ type: 'file_complete', transferId }))
   }
 
   const handleFileInput = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -606,5 +398,73 @@ export function useEasyChat() {
     appendPendingFiles,
     pendingAttachments,
     removePendingAttachment,
+  }
+}
+
+function appendSystemMessage(setMessages: React.Dispatch<React.SetStateAction<Message[]>>, text: string) {
+  setMessages((current) => [
+    ...current,
+    {
+      id: `system-${Date.now()}`,
+      sender: 'system',
+      type: 'text',
+      content: text,
+    },
+  ])
+}
+
+function replaceTransferProgress(
+  setMessages: React.Dispatch<React.SetStateAction<Message[]>>,
+  event: FileProgressEvent,
+) {
+  setMessages((current) =>
+    current.map((message) =>
+      message.id === event.transferId
+        ? {
+            ...message,
+            meta: `${formatBytes(event.size)} • ${Math.round(event.progress * 100)}%`,
+            progress: event.progress,
+          }
+        : message,
+    ),
+  )
+}
+
+function createIncomingFileMessage(event: IncomingFileStart): Message {
+  return {
+    id: event.transferId,
+    sender: 'phone',
+    type: 'file',
+    content: event.name,
+    batchId: event.batchId,
+    batchTotal: event.batchTotal,
+    meta: `${formatBytes(event.size)} • 0%`,
+    progress: 0,
+    mimeType: event.mimeType,
+  }
+}
+
+function createOutgoingFileMessage(
+  event: {
+    transferId: string
+    file: File
+    batchId?: string
+    batchTotal?: number
+    mimeType: string
+    size: number
+  },
+  downloadUrl: string,
+): Message {
+  return {
+    id: event.transferId,
+    sender: 'browser',
+    type: 'file',
+    content: event.file.name,
+    batchId: event.batchId,
+    batchTotal: event.batchTotal,
+    meta: `${formatBytes(event.size)} • 0%`,
+    progress: 0,
+    mimeType: event.mimeType,
+    downloadUrl,
   }
 }

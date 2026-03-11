@@ -1,4 +1,4 @@
-# Easy Chat Design Language
+# EasyChat Design Language
 
 ## Source Direction
 
@@ -10,7 +10,7 @@ We do not copy layouts mechanically.
 
 ## Design Goal
 
-Easy Chat web should feel:
+EasyChat web should feel:
 - concise
 - precise
 - reliable
@@ -147,7 +147,7 @@ When adjusting UI in the future:
 
 ## Current Design System Intention
 
-The current Easy Chat web should move toward:
+The current EasyChat web should move toward:
 - cool gray page background
 - white main content surfaces
 - subtle blue-gray accents

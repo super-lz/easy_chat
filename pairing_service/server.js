@@ -1,11 +1,49 @@
+import { existsSync, readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
+import { dirname, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
+
+loadEnvFiles()
 
 const PORT = Number(process.env.PORT || 8787)
 const ORIGIN = process.env.ALLOW_ORIGIN || '*'
+const PUBLIC_SERVER_URL = process.env.PUBLIC_SERVER_URL || ''
 const SESSION_TTL_MS = 1000 * 60 * 3
 
 const sessions = new Map()
+
+function loadEnvFiles() {
+  const rootDir = dirname(fileURLToPath(import.meta.url))
+  const envFiles = ['.env', '.env.local']
+
+  for (const name of envFiles) {
+    const fullPath = resolve(rootDir, name)
+    if (!existsSync(fullPath)) continue
+
+    const content = readFileSync(fullPath, 'utf8')
+    for (const line of content.split(/\r?\n/)) {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith('#')) continue
+
+      const separatorIndex = trimmed.indexOf('=')
+      if (separatorIndex <= 0) continue
+
+      const key = trimmed.slice(0, separatorIndex).trim()
+      if (!key || process.env[key] !== undefined) continue
+
+      let value = trimmed.slice(separatorIndex + 1).trim()
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1)
+      }
+
+      process.env[key] = value
+    }
+  }
+}
 
 function createSession() {
   const sessionId = randomUUID()
@@ -113,8 +151,9 @@ const server = createServer(async (request, response) => {
 
   if (request.method === 'POST' && url.pathname === '/api/pairings') {
     const session = createSession()
+    const publicServerUrl = PUBLIC_SERVER_URL || `http://${request.headers.host}`
     const pairingUrl = `easychat://pair?sessionId=${session.sessionId}&challenge=${session.challenge}&serverUrl=${encodeURIComponent(
-      `http://${request.headers.host}`,
+      publicServerUrl,
     )}`
 
     sendJson(response, 201, {

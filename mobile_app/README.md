@@ -1,16 +1,21 @@
-# mobile_app
+# 手机端
 
-A new Flutter project.
+EasyChat 的 Flutter 手机端。
 
-## Getting Started
+## 启动
 
-This project is a starting point for a Flutter application.
+```bash
+flutter run
+```
 
-A few resources to get you started if this is your first Flutter project:
+## 检查
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+```bash
+flutter analyze
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 说明
+
+- 手机端负责扫码、向配对服务注册本机地址，并启动本地直连服务
+- 真机调试时，手机和电脑需要在同一 Wi-Fi
+- iPhone 需要允许相机和本地网络权限

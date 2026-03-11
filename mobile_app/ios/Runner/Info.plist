@@ -46,6 +46,8 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Easy Chat uses the camera to scan the pairing QR code shown on your computer.</string>
+	<string>EasyChat uses the camera to scan the pairing QR code shown on your computer.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>EasyChat uses your local network so your phone and computer can connect directly on the same Wi-Fi.</string>
 </dict>
 </plist>

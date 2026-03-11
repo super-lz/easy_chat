@@ -120,7 +120,6 @@ export function MessageList({ messages }: MessageListProps) {
           >
             {message.sender !== 'system' ? <div className={`message-avatar avatar-${message.sender}`} /> : null}
             <div className={`message-bubble ${message.type === 'file' ? 'file-bubble' : ''}`}>
-              {message.sender === 'system' ? <span className="message-status-tag">已连接</span> : null}
               {message.type === 'file' && message.mimeType?.startsWith('image/') && message.downloadUrl ? (
                 <img className="image-preview" src={message.downloadUrl} alt={message.content} />
               ) : null}

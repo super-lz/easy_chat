@@ -1,0 +1,9 @@
+{
+  "name": "easychat-workspace",
+  "private": true,
+  "scripts": {
+    "dev": "sh ./scripts/dev.sh",
+    "dev:pairing": "cd pairing_service && node server.js",
+    "dev:web": "cd web && npm run dev -- --host 0.0.0.0"
+  }
+}

@@ -6,12 +6,16 @@ import { ChatSidebar } from './ChatSidebar'
 
 type ChatScreenProps = {
   canSend: boolean
+  connectionAddress: string
   conversationTitle: string
   directStatus: string
   draft: string
+  error: string | null
   fileInputRef: RefObject<HTMLInputElement | null>
   localDeviceName: string
   messages: Message[]
+  pageOrigin: string
+  pairingServiceOrigin: string
   pendingAttachments: PendingAttachment[]
   settings: AppSettings
   onAppendFiles: (files: File[]) => void
@@ -25,12 +29,16 @@ type ChatScreenProps = {
 
 export function ChatScreen({
   canSend,
+  connectionAddress,
   conversationTitle,
   directStatus,
   draft,
+  error,
   fileInputRef,
   localDeviceName,
   messages,
+  pageOrigin,
+  pairingServiceOrigin,
   pendingAttachments,
   settings,
   onAppendFiles,
@@ -44,9 +52,13 @@ export function ChatScreen({
   return (
     <section className="chat-layout">
       <ChatSidebar
+        connectionAddress={connectionAddress}
         conversationTitle={conversationTitle}
         directStatus={directStatus}
+        error={error}
         localDeviceName={localDeviceName}
+        pageOrigin={pageOrigin}
+        pairingServiceOrigin={pairingServiceOrigin}
         onDisconnect={onDisconnect}
       />
 

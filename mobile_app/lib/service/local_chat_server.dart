@@ -100,11 +100,11 @@ class LocalChatServer {
     required this.onStatusChanged,
   });
 
-  final DirectMessageHandler onBrowserMessage;
-  final FileReceivedHandler onFileReceived;
-  final FileProgressHandler onFileProgress;
-  final FileDeliveredHandler onFileDelivered;
-  final ServerStatusHandler onStatusChanged;
+  DirectMessageHandler onBrowserMessage;
+  FileReceivedHandler onFileReceived;
+  FileProgressHandler onFileProgress;
+  FileDeliveredHandler onFileDelivered;
+  ServerStatusHandler onStatusChanged;
 
   HttpServer? _server;
   WebSocket? _socket;

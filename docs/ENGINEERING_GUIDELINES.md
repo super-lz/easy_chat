@@ -1,4 +1,4 @@
-# Easy Chat Engineering Guidelines
+# EasyChat Engineering Guidelines
 
 ## Purpose
 
@@ -9,6 +9,9 @@ Goal:
 - avoid one-file accumulation
 - keep UI, protocol, and local transport logic separable
 - make later maintenance predictable
+
+Related docs:
+- `docs/MOBILE_GUIDELINES.md`: mobile app directory and state management rules
 
 This document should be updated during development whenever the project structure or standards change.
 
@@ -92,6 +95,12 @@ Current direction:
 - `App.tsx` should remain a composition root and high-level orchestrator
 - direct socket flow should eventually move into `hooks/useEasyChat.ts`
 - rendering should stay inside `components/`
+
+Current boundary:
+- `hooks/useEasyChat.ts` is the web orchestration layer only
+- pairing HTTP + SSE access belongs in `lib/pairingClient.ts`
+- websocket + file transfer protocol belongs in `lib/directTransport.ts`
+- UI components must consume state/actions and should not parse transport payloads directly
 
 ## Component Rules
 
@@ -254,14 +263,14 @@ If chunk behavior changes, document:
 Every meaningful web change should end with:
 
 ```bash
-cd /Users/leazer/Documents/leazer/easy_chat/web
+cd web
 npm run build
 ```
 
 When changing mobile code, also run:
 
 ```bash
-cd /Users/leazer/Documents/leazer/easy_chat/mobile_app
+cd mobile_app
 flutter analyze
 flutter test
 ```

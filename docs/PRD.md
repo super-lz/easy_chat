@@ -1,8 +1,8 @@
-# Easy Chat PRD
+# EasyChat PRD
 
 ## 1. Product Summary
 
-Easy Chat is a LAN-first chat-style transfer tool for one user's phone and computer.
+EasyChat is a LAN-first chat-style transfer tool for one user's phone and computer.
 
 Core constraints:
 
@@ -16,7 +16,7 @@ Core constraints:
 Core experience:
 
 1. User opens the phone app.
-2. User opens the Easy Chat pairing page on the computer browser.
+2. User opens the EasyChat pairing page on the computer browser.
 3. The browser shows a QR code.
 4. The phone app scans the QR code.
 5. The phone app reports its current LAN address and a temporary token to the pairing service.

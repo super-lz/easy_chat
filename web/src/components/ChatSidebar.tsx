@@ -1,22 +1,28 @@
+import { Smartphone } from 'lucide-react'
+
 type ChatSidebarProps = {
-  connectionAddress: string
-  conversationTitle: string
+  browserIp: string
+  browserName: string
+  browserPort: string
   directStatus: string
   error: string | null
-  localDeviceName: string
-  pageOrigin: string
-  pairingServiceOrigin: string
+  phoneIp: string
+  phoneName: string
+  phonePort: string
+  wifiName: string
   onDisconnect: () => void
 }
 
 export function ChatSidebar({
-  connectionAddress,
-  conversationTitle,
+  browserIp,
+  browserName,
+  browserPort,
   directStatus,
   error,
-  localDeviceName,
-  pageOrigin,
-  pairingServiceOrigin,
+  phoneIp,
+  phoneName,
+  phonePort,
+  wifiName,
   onDisconnect,
 }: ChatSidebarProps) {
   const connectionState =
@@ -32,50 +38,67 @@ export function ChatSidebar({
         <h1 className="sidebar-brand">EasyChat</h1>
       </div>
 
-      <div className="sidebar-spacer" />
-
       <div className="sidebar-status">
-        <div className="device-card">
-          <strong>{localDeviceName}</strong>
-        </div>
-        <div className={`device-connection-state ${connectionState.className}`}>
-          <span className="device-link-vertical" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <path d="M12 4v16" />
-              <path d="m8 8 4-4 4 4" />
-              <path d="m8 16 4 4 4-4" />
-            </svg>
-          </span>
-          <span>{connectionState.label}</span>
-        </div>
-        <div className="device-card">
-          <strong>{conversationTitle}</strong>
-        </div>
-        <div className="diagnostic-card">
-          <span>页面</span>
-          <code>{pageOrigin}</code>
-        </div>
-        <div className="diagnostic-card">
-          <span>配对入口</span>
-          <code>{pairingServiceOrigin}</code>
-        </div>
-        <div className="diagnostic-card">
-          <span>目标直连</span>
-          <code>{connectionAddress}</code>
-        </div>
-        <div className="diagnostic-card">
-          <span>状态</span>
-          <code>{directStatus}</code>
-        </div>
-        {error ? (
-          <div className="diagnostic-card diagnostic-card-error">
-            <span>错误</span>
-            <code>{error}</code>
+        <section className="sidebar-panel">
+          <p className="sidebar-panel-label">Current Session</p>
+          <div className="session-device-block">
+            <div className="session-device-icon" aria-hidden="true">
+              <Smartphone />
+            </div>
+            <div className="session-device-copy">
+              <strong>{phoneName}</strong>
+              <div className={`device-connection-state ${connectionState.className}`}>
+                <span className="device-status-dot" aria-hidden="true" />
+                <span>
+                  {connectionState.className === 'is-connected'
+                    ? 'Connected'
+                    : connectionState.className === 'is-failed'
+                      ? 'Offline'
+                      : 'Connecting'}
+                </span>
+              </div>
+            </div>
           </div>
-        ) : null}
-        <button className="disconnect-button dock-disconnect" type="button" onClick={onDisconnect}>
-          断开连接
-        </button>
+          <button className="disconnect-button dock-disconnect" type="button" onClick={onDisconnect}>
+            Disconnect Device
+          </button>
+        </section>
+
+        <section className="sidebar-panel">
+          <p className="sidebar-panel-label">Local Network</p>
+          <div className="network-detail-list">
+            <div className="network-detail-row">
+              <span>Wi‑Fi</span>
+              <code>{wifiName}</code>
+            </div>
+            <div className="network-detail-row">
+              <span>Phone</span>
+              <code>{phoneName}</code>
+            </div>
+            <div className="network-detail-row">
+              <span>Browser</span>
+              <code>{browserName}</code>
+            </div>
+            <div className="network-detail-row">
+              <span>Host</span>
+              <code>{`${phoneIp}:${phonePort}`}</code>
+            </div>
+            <div className="network-detail-row">
+              <span>Client</span>
+              <code>{`${browserIp}:${browserPort}`}</code>
+            </div>
+            <div className="network-detail-row network-detail-row-status">
+              <span>Status</span>
+              <code>{connectionState.className === 'is-connected' ? 'Active' : connectionState.label}</code>
+            </div>
+          </div>
+          {error ? (
+            <div className="diagnostic-card diagnostic-card-error">
+              <span>错误</span>
+              <code>{error}</code>
+            </div>
+          ) : null}
+        </section>
       </div>
     </aside>
   )

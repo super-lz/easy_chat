@@ -153,6 +153,7 @@ Files are transferred over the same direct socket using resumable chunk messages
 - `file_chunk`
 - `file_complete`
 - `file_received`
+- `file_cancel`
 
 ### File offer
 
@@ -164,7 +165,7 @@ Files are transferred over the same direct socket using resumable chunk messages
   "name": "notes.pdf",
   "mimeType": "application/pdf",
   "size": 18342,
-  "chunkSize": 32768,
+  "chunkSize": 131072,
   "totalChunks": 1
 }
 ```
@@ -210,6 +211,17 @@ Receiver sends this after the full file has been reassembled successfully.
 ```json
 {
   "type": "file_received",
+  "transferId": "file-1773140"
+}
+```
+
+### File cancel
+
+Either side can cancel an in-flight transfer.
+
+```json
+{
+  "type": "file_cancel",
   "transferId": "file-1773140"
 }
 ```

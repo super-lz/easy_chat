@@ -115,6 +115,7 @@ export function useEasyChat() {
                   progress: 1,
                   downloadUrl: event.downloadUrl,
                   mimeType: event.mimeType,
+                  transferState: 'completed',
                 }
               : message,
           ),
@@ -131,10 +132,14 @@ export function useEasyChat() {
                   ...message,
                   meta: `${formatBytes(size)} • 已发送`,
                   progress: 1,
+                  transferState: 'completed',
                 }
               : message,
           ),
         )
+      },
+      onFileCanceled: (event) => {
+        markTransferCancelled(setMessages, event.transferId, event.size)
       },
       onSystemMessage: (text) => {
         appendSystemMessage(setMessages, text)
@@ -389,6 +394,29 @@ export function useEasyChat() {
     setSettings((current) => ({ ...current, [key]: !current[key] }))
   }
 
+  function cancelFileTransfer(transferId: string) {
+    const transport = transportRef.current
+    if (!transport) return
+    transport.cancelTransfer(transferId)
+  }
+
+  function cancelBatchTransfers(batchId: string) {
+    const transport = transportRef.current
+    if (!transport) return
+
+    const activeTransferIds = messages
+      .filter(
+        (message) =>
+          message.type === 'file' &&
+          message.batchId === batchId &&
+          message.transferState === 'transferring',
+      )
+      .map((message) => message.id)
+
+    if (activeTransferIds.length === 0) return
+    transport.cancelTransfers(activeTransferIds)
+  }
+
   return {
     canCompose,
     canSend,
@@ -414,6 +442,8 @@ export function useEasyChat() {
     sendMessage,
     setDraft,
     appendPendingFiles,
+    cancelBatchTransfers,
+    cancelFileTransfer,
     pendingAttachments,
     removePendingAttachment,
   }
@@ -442,6 +472,7 @@ function replaceTransferProgress(
             ...message,
             meta: `${formatBytes(event.size)} • ${Math.round(event.progress * 100)}%`,
             progress: event.progress,
+            transferState: 'transferring',
           }
         : message,
     ),
@@ -459,6 +490,7 @@ function createIncomingFileMessage(event: IncomingFileStart): Message {
     meta: `${formatBytes(event.size)} • 0%`,
     progress: 0,
     mimeType: event.mimeType,
+    transferState: 'transferring',
   }
 }
 
@@ -486,5 +518,28 @@ function createOutgoingFileMessage(
     progress: 0,
     mimeType: event.mimeType,
     downloadUrl,
+    transferState: 'transferring',
   }
+}
+
+function markTransferCancelled(
+  setMessages: React.Dispatch<React.SetStateAction<Message[]>>,
+  transferId: string,
+  size: number,
+) {
+  setMessages((current) =>
+    current.map((message) => {
+      if (message.id !== transferId) return message
+      if (message.downloadUrl?.startsWith('blob:')) {
+        URL.revokeObjectURL(message.downloadUrl)
+      }
+      return {
+        ...message,
+        downloadUrl: undefined,
+        meta: `${formatBytes(size)} • 已取消`,
+        progress: undefined,
+        transferState: 'cancelled',
+      }
+    }),
+  )
 }

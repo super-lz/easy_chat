@@ -89,6 +89,8 @@ class _OutgoingFile {
   final int? batchTotal;
   final int chunkSize;
   final int totalChunks;
+  int nextChunk = 0;
+  bool isSending = false;
 }
 
 class LocalChatServer {
@@ -174,6 +176,9 @@ class LocalChatServer {
                 break;
               case 'file_received':
                 _handleFileReceived(payload);
+                break;
+              case 'file_cancel':
+                _handleFileCancel(payload);
                 break;
               case 'ping':
                 socket.add(jsonEncode({'type': 'pong'}));
@@ -270,7 +275,8 @@ class LocalChatServer {
           : (nextChunk / outgoing.totalChunks).clamp(0, 1).toDouble(),
     );
 
-    _sendChunksFrom(socket, outgoing, nextChunk);
+    outgoing.nextChunk = nextChunk;
+    _scheduleChunkPump(socket, outgoing);
   }
 
   void _handleFileChunk(Map<String, dynamic> payload) {
@@ -300,14 +306,6 @@ class LocalChatServer {
         ? 0
         : incoming.receivedBytes() / incoming.size;
     onFileProgress(transferId, progress.clamp(0, 1).toDouble());
-
-    socket.add(
-      jsonEncode({
-        'type': 'file_resume',
-        'transferId': transferId,
-        'nextChunk': incoming.contiguousCount(),
-      }),
-    );
   }
 
   void _handleFileComplete(Map<String, dynamic> payload) {
@@ -372,6 +370,16 @@ class LocalChatServer {
     onFileDelivered(transferId);
   }
 
+  void _handleFileCancel(Map<String, dynamic> payload) {
+    final transferId = payload['transferId']?.toString();
+    if (transferId == null) {
+      return;
+    }
+
+    _outgoingFiles.remove(transferId);
+    _incomingFiles.remove(transferId);
+  }
+
   void _sendFileOffer(WebSocket socket, _OutgoingFile outgoing) {
     socket.add(
       jsonEncode({
@@ -389,12 +397,30 @@ class LocalChatServer {
     );
   }
 
-  void _sendChunksFrom(
-    WebSocket socket,
-    _OutgoingFile outgoing,
-    int startChunk,
-  ) {
-    if (startChunk >= outgoing.totalChunks) {
+  void _scheduleChunkPump(WebSocket socket, _OutgoingFile outgoing) {
+    if (outgoing.isSending) {
+      return;
+    }
+
+    outgoing.isSending = true;
+    unawaited(_pumpFileChunks(socket, outgoing.transferId));
+  }
+
+  Future<void> _pumpFileChunks(WebSocket socket, String transferId) async {
+    final outgoing = _outgoingFiles[transferId];
+    if (outgoing == null) {
+      return;
+    }
+
+    if (_socket == null || !identical(_socket, socket)) {
+      outgoing.isSending = false;
+      return;
+    }
+
+    const chunksPerTick = 4;
+
+    if (outgoing.nextChunk >= outgoing.totalChunks) {
+      outgoing.isSending = false;
       socket.add(
         jsonEncode({
           'type': 'file_complete',
@@ -404,11 +430,19 @@ class LocalChatServer {
       return;
     }
 
+    final endChunk = outgoing.nextChunk + chunksPerTick > outgoing.totalChunks
+        ? outgoing.totalChunks
+        : outgoing.nextChunk + chunksPerTick;
+
     for (
-      var chunkIndex = startChunk;
-      chunkIndex < outgoing.totalChunks;
+      var chunkIndex = outgoing.nextChunk;
+      chunkIndex < endChunk;
       chunkIndex += 1
     ) {
+      if (!_outgoingFiles.containsKey(transferId)) {
+        return;
+      }
+
       final start = chunkIndex * outgoing.chunkSize;
       final end = (start + outgoing.chunkSize > outgoing.bytes.length)
           ? outgoing.bytes.length
@@ -422,11 +456,30 @@ class LocalChatServer {
           'chunk': base64Encode(chunk),
         }),
       );
+      outgoing.nextChunk = chunkIndex + 1;
     }
 
-    socket.add(
-      jsonEncode({'type': 'file_complete', 'transferId': outgoing.transferId}),
-    );
+    if (!_outgoingFiles.containsKey(transferId)) {
+      return;
+    }
+
+    outgoing.isSending = false;
+
+    if (outgoing.nextChunk >= outgoing.totalChunks) {
+      socket.add(
+        jsonEncode({
+          'type': 'file_complete',
+          'transferId': outgoing.transferId,
+        }),
+      );
+      return;
+    }
+
+    await Future<void>.delayed(Duration.zero);
+    if (_socket == null || !identical(_socket, socket)) {
+      return;
+    }
+    _scheduleChunkPump(socket, outgoing);
   }
 
   void sendPhoneMessage(String text) {
@@ -448,7 +501,7 @@ class LocalChatServer {
     String? batchId,
     int? batchTotal,
   }) {
-    const chunkSize = 32 * 1024;
+    const chunkSize = 128 * 1024;
     final outgoing = _OutgoingFile(
       transferId: transferId,
       name: name,

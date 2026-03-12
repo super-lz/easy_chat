@@ -6,12 +6,13 @@ import './App.css'
 
 function App() {
   const browserName = getBrowserName(navigator.userAgent)
-  const currentPageOrigin = window.location.origin
-  const pairingServiceOrigin = import.meta.env.VITE_PAIRING_API_URL || currentPageOrigin
+  const currentLocation = window.location
+  const browserIp = currentLocation.hostname || '未知'
+  const browserPort =
+    currentLocation.port || (currentLocation.protocol === 'https:' ? '443' : '80')
   const {
     canCompose,
     canSend,
-    connectionAddress,
     conversationTitle,
     countdown,
     directStatus,
@@ -22,11 +23,14 @@ function App() {
     isLoading,
     pendingAttachments,
     phase,
+    endpoint,
     removePendingAttachment,
     session,
     settings,
     visibleMessages,
     appendPendingFiles,
+    cancelBatchTransfers,
+    cancelFileTransfer,
     disconnectToPairing,
     sendMessage,
     setDraft,
@@ -39,15 +43,16 @@ function App() {
           browserName={browserName}
           countdown={countdown}
           isLoading={isLoading}
-          pairingServiceOrigin={pairingServiceOrigin}
-          pageOrigin={currentPageOrigin}
+          pairingServiceOrigin={import.meta.env.VITE_PAIRING_API_URL || window.location.origin}
+          pageOrigin={window.location.origin}
           session={session}
         />
       ) : (
         <ChatScreen
+          browserIp={browserIp}
+          browserPort={browserPort}
           canCompose={canCompose}
           canSend={canSend}
-          connectionAddress={connectionAddress}
           conversationTitle={conversationTitle}
           directStatus={directStatus}
           draft={draft}
@@ -55,11 +60,14 @@ function App() {
           fileInputRef={fileInputRef}
           localDeviceName={browserName}
           messages={visibleMessages}
-          pageOrigin={currentPageOrigin}
-          pairingServiceOrigin={pairingServiceOrigin}
           pendingAttachments={pendingAttachments}
+          phoneIp={endpoint?.phoneIp ?? '等待连接'}
+          phonePort={endpoint ? String(endpoint.phonePort) : '等待连接'}
           settings={settings}
+          wifiName={endpoint?.wifiName || '等待连接'}
           onAppendFiles={appendPendingFiles}
+          onCancelBatchTransfers={cancelBatchTransfers}
+          onCancelFileTransfer={cancelFileTransfer}
           onDisconnect={disconnectToPairing}
           onDraftChange={setDraft}
           onFileChange={(event) => void handleFileInput(event)}

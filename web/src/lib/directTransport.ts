@@ -1,6 +1,6 @@
 import type { DirectPayload, IncomingTransfer, OutgoingTransfer, PhoneEndpoint } from './types'
 
-const DEFAULT_CHUNK_SIZE = 32 * 1024
+const DEFAULT_CHUNK_SIZE = 128 * 1024
 
 export type FileBatch = {
   id: string
@@ -31,6 +31,13 @@ export type FileProgressEvent = {
   progress: number
 }
 
+export type FileCanceledEvent = {
+  transferId: string
+  size: number
+  batchId?: string
+  batchTotal?: number
+}
+
 export type IncomingFileComplete = {
   transferId: string
   name: string
@@ -49,6 +56,7 @@ type DirectTransportCallbacks = {
   onIncomingFileComplete: (event: IncomingFileComplete) => void
   onOutgoingFileProgress: (event: FileProgressEvent) => void
   onOutgoingFileDelivered: (event: { transferId: string; size: number }) => void
+  onFileCanceled: (event: FileCanceledEvent & { sender: 'browser' | 'phone' }) => void
   onSystemMessage: (text: string) => void
   onProtocolError: (text: string) => void
   onConnectionError: () => void
@@ -130,12 +138,15 @@ export class DirectTransportClient {
     const totalChunks = Math.ceil(bytes.length / DEFAULT_CHUNK_SIZE)
 
     this.outgoingTransfers.set(transferId, {
+      transferId,
       file,
       bytes,
       batchId: batch?.id,
       batchTotal: batch?.total,
       chunkSize: DEFAULT_CHUNK_SIZE,
       totalChunks,
+      nextChunk: 0,
+      isSending: false,
     })
 
     const descriptor: OutgoingFileDescriptor = {
@@ -155,6 +166,46 @@ export class DirectTransportClient {
   resetTransfers() {
     this.incomingTransfers.clear()
     this.outgoingTransfers.clear()
+  }
+
+  cancelTransfer(transferId: string) {
+    const outgoing = this.outgoingTransfers.get(transferId)
+    if (outgoing) {
+      this.outgoingTransfers.delete(transferId)
+      this.sendTransferCancel(transferId)
+      this.callbacks.onFileCanceled({
+        transferId,
+        size: outgoing.file.size,
+        batchId: outgoing.batchId,
+        batchTotal: outgoing.batchTotal,
+        sender: 'browser',
+      })
+      return true
+    }
+
+    const incoming = this.incomingTransfers.get(transferId)
+    if (incoming) {
+      this.incomingTransfers.delete(transferId)
+      this.sendTransferCancel(transferId)
+      this.callbacks.onFileCanceled({
+        transferId,
+        size: incoming.size,
+        batchId: incoming.batchId,
+        batchTotal: incoming.batchTotal,
+        sender: 'phone',
+      })
+      return true
+    }
+
+    return false
+  }
+
+  cancelTransfers(transferIds: string[]) {
+    let cancelled = false
+    for (const transferId of transferIds) {
+      cancelled = this.cancelTransfer(transferId) || cancelled
+    }
+    return cancelled
   }
 
   private handleMessage(raw: string) {
@@ -187,6 +238,11 @@ export class DirectTransportClient {
 
     if (payload.type === 'file_received') {
       this.handleFileReceived(payload.transferId)
+      return
+    }
+
+    if (payload.type === 'file_cancel') {
+      this.handleFileCancel(payload.transferId)
       return
     }
 
@@ -234,13 +290,15 @@ export class DirectTransportClient {
     const outgoing = this.outgoingTransfers.get(transferId)
     if (!outgoing) return
 
+    outgoing.nextChunk = nextChunk
+
     this.callbacks.onOutgoingFileProgress({
       transferId,
       size: outgoing.file.size,
       progress: outgoing.totalChunks === 0 ? 0 : nextChunk / outgoing.totalChunks,
     })
 
-    this.sendFileChunks(transferId, outgoing, nextChunk)
+    this.scheduleChunkPump(outgoing)
   }
 
   private handleFileChunk(transferId: string, chunkIndex: number, encodedChunk: string) {
@@ -256,12 +314,6 @@ export class DirectTransportClient {
       size: transfer.size,
       progress: transfer.size === 0 ? 0 : loaded / transfer.size,
     })
-
-    let nextChunk = 0
-    while (nextChunk < transfer.totalChunks && transfer.chunks[nextChunk]) {
-      nextChunk += 1
-    }
-    this.requireOpenSocket().send(JSON.stringify({ type: 'file_resume', transferId, nextChunk }))
   }
 
   private handleFileComplete(transferId: string) {
@@ -305,6 +357,33 @@ export class DirectTransportClient {
     this.callbacks.onOutgoingFileDelivered({ transferId, size: outgoing.file.size })
   }
 
+  private handleFileCancel(transferId: string) {
+    const outgoing = this.outgoingTransfers.get(transferId)
+    if (outgoing) {
+      this.outgoingTransfers.delete(transferId)
+      this.callbacks.onFileCanceled({
+        transferId,
+        size: outgoing.file.size,
+        batchId: outgoing.batchId,
+        batchTotal: outgoing.batchTotal,
+        sender: 'browser',
+      })
+      return
+    }
+
+    const incoming = this.incomingTransfers.get(transferId)
+    if (!incoming) return
+
+    this.incomingTransfers.delete(transferId)
+    this.callbacks.onFileCanceled({
+      transferId,
+      size: incoming.size,
+      batchId: incoming.batchId,
+      batchTotal: incoming.batchTotal,
+      sender: 'phone',
+    })
+  }
+
   private sendFileOffer(socket: WebSocket, transferId: string, outgoing: OutgoingTransfer) {
     socket.send(
       JSON.stringify({
@@ -322,15 +401,38 @@ export class DirectTransportClient {
     )
   }
 
-  private sendFileChunks(transferId: string, outgoing: OutgoingTransfer, startChunk: number) {
-    const socket = this.requireOpenSocket()
+  private scheduleChunkPump(outgoing: OutgoingTransfer) {
+    if (outgoing.isSending) return
+    outgoing.isSending = true
+    window.setTimeout(() => {
+      this.pumpFileChunks(outgoing.transferId)
+    }, 0)
+  }
 
-    if (startChunk >= outgoing.totalChunks) {
+  private pumpFileChunks(transferId: string) {
+    const outgoing = this.outgoingTransfers.get(transferId)
+    if (!outgoing) return
+
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      outgoing.isSending = false
+      return
+    }
+
+    const socket = this.socket
+    const chunksPerTick = 4
+
+    if (outgoing.nextChunk >= outgoing.totalChunks) {
+      outgoing.isSending = false
       socket.send(JSON.stringify({ type: 'file_complete', transferId }))
       return
     }
 
-    for (let chunkIndex = startChunk; chunkIndex < outgoing.totalChunks; chunkIndex += 1) {
+    const endChunk = Math.min(outgoing.nextChunk + chunksPerTick, outgoing.totalChunks)
+
+    for (let chunkIndex = outgoing.nextChunk; chunkIndex < endChunk; chunkIndex += 1) {
+      if (!this.outgoingTransfers.has(transferId)) {
+        return
+      }
       const start = chunkIndex * outgoing.chunkSize
       const end = Math.min(start + outgoing.chunkSize, outgoing.bytes.length)
       const chunk = outgoing.bytes.slice(start, end)
@@ -339,9 +441,26 @@ export class DirectTransportClient {
         binary += String.fromCharCode(value)
       })
       socket.send(JSON.stringify({ type: 'file_chunk', transferId, chunkIndex, chunk: btoa(binary) }))
+      outgoing.nextChunk = chunkIndex + 1
     }
 
-    socket.send(JSON.stringify({ type: 'file_complete', transferId }))
+    if (!this.outgoingTransfers.has(transferId)) {
+      return
+    }
+
+    outgoing.isSending = false
+
+    if (outgoing.nextChunk >= outgoing.totalChunks) {
+      socket.send(JSON.stringify({ type: 'file_complete', transferId }))
+      return
+    }
+
+    this.scheduleChunkPump(outgoing)
+  }
+
+  private sendTransferCancel(transferId: string) {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return
+    this.socket.send(JSON.stringify({ type: 'file_cancel', transferId }))
   }
 
   private requireOpenSocket() {

@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef } from 'react'
+import { CircleX } from 'lucide-react'
 import type { PreviewSlide } from './ImagePreviewLightbox'
 import type { Message } from '../lib/types'
 
 type MessageListProps = {
   messages: Message[]
+  onCancelBatchTransfers: (batchId: string) => void
+  onCancelFileTransfer: (transferId: string) => void
   onOpenImagePreview: (slides: PreviewSlide[], index: number) => void
 }
 
@@ -17,7 +20,12 @@ type RenderItem =
       texts: Message[]
     }
 
-export function MessageList({ messages, onOpenImagePreview }: MessageListProps) {
+export function MessageList({
+  messages,
+  onCancelBatchTransfers,
+  onCancelFileTransfer,
+  onOpenImagePreview,
+}: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const renderItems = useMemo<RenderItem[]>(() => {
     const items: RenderItem[] = []
@@ -114,14 +122,12 @@ export function MessageList({ messages, onOpenImagePreview }: MessageListProps) 
             const downloadable = item.files.filter(
               (entry) => entry.downloadUrl,
             )
+            const cancelableFiles = item.files.filter(isTransferCancelable)
             return (
               <article
                 key={item.groupId}
                 className={`message-row ${item.sender === 'browser' ? 'from-browser' : ''}`}
               >
-                {item.sender !== 'system' ? (
-                  <div className={`message-avatar avatar-${item.sender}`} />
-                ) : null}
                 <div
                   className={`message-bubble file-batch-bubble ${item.texts.length > 0 ? 'composed-message-bubble' : ''}`}
                 >
@@ -130,16 +136,32 @@ export function MessageList({ messages, onOpenImagePreview }: MessageListProps) 
                       {item.files.length > 1 ? (
                         <div className="file-batch-header">
                           <strong>{item.files.length} 个文件</strong>
-                          {downloadable.length === item.files.length &&
-                          downloadable.length > 0 ? (
-                            <button
-                              type="button"
-                              className="batch-download-button"
-                              onClick={() => downloadBatch(item.files)}
-                            >
-                              全部下载
-                            </button>
-                          ) : null}
+                          <div className="file-batch-actions">
+                            {cancelableFiles.length > 1 && item.files[0]?.batchId ? (
+                              <button
+                                type="button"
+                                className="file-action-button file-action-button-danger"
+                                onClick={() => {
+                                  if (!window.confirm(`确认取消这 ${cancelableFiles.length} 个文件的传输吗？`)) return
+                                  onCancelBatchTransfers(item.files[0].batchId!)
+                                }}
+                                aria-label="取消全部传输"
+                              >
+                                <CircleX aria-hidden="true" />
+                                <span>全部取消</span>
+                              </button>
+                            ) : null}
+                            {downloadable.length === item.files.length &&
+                            downloadable.length > 0 ? (
+                              <button
+                                type="button"
+                                className="batch-download-button"
+                                onClick={() => downloadBatch(item.files)}
+                              >
+                                全部下载
+                              </button>
+                            ) : null}
+                          </div>
                         </div>
                       ) : null}
                       <div className="file-batch-list">
@@ -165,17 +187,32 @@ export function MessageList({ messages, onOpenImagePreview }: MessageListProps) 
                               </div>
                             )}
                             <div className="file-batch-copy">
-                              {message.downloadUrl ? (
-                                <a
-                                  className="file-link"
-                                  href={message.downloadUrl}
-                                  download={message.content}
-                                >
-                                  {message.content}
-                                </a>
-                              ) : (
-                                <span>{message.content}</span>
-                              )}
+                              <div className="file-batch-copy-main">
+                                {message.downloadUrl ? (
+                                  <a
+                                    className="file-link"
+                                    href={message.downloadUrl}
+                                    download={message.content}
+                                  >
+                                    {message.content}
+                                  </a>
+                                ) : (
+                                  <span>{message.content}</span>
+                                )}
+                                {isTransferCancelable(message) ? (
+                                  <button
+                                    type="button"
+                                    className="icon-action-button icon-action-button-danger"
+                                    onClick={() => {
+                                      if (!window.confirm(`确认取消 ${message.content} 的传输吗？`)) return
+                                      onCancelFileTransfer(message.id)
+                                    }}
+                                    aria-label={`取消 ${message.content} 的传输`}
+                                  >
+                                    <CircleX aria-hidden="true" />
+                                  </button>
+                                ) : null}
+                              </div>
                               {message.meta ? (
                                 <small>{message.meta}</small>
                               ) : null}
@@ -217,9 +254,6 @@ export function MessageList({ messages, onOpenImagePreview }: MessageListProps) 
                 message.sender === 'system' ? 'from-system' : ''
               }`}
           >
-              {message.sender !== 'system' ? (
-                <div className={`message-avatar avatar-${message.sender}`} />
-              ) : null}
               <div
                 className={`message-bubble ${message.type === 'file' ? 'file-bubble' : ''}`}
               >
@@ -239,17 +273,36 @@ export function MessageList({ messages, onOpenImagePreview }: MessageListProps) 
                     />
                   </button>
                 ) : null}
-                {message.sender !== 'system' && !message.downloadUrl ? (
-                  <p>{message.content}</p>
+                {message.type === 'file' && message.sender !== 'system' ? (
+                  <div className="file-message-header">
+                    {message.downloadUrl ? (
+                      <a
+                        className="file-link"
+                        href={message.downloadUrl}
+                        download={message.content}
+                      >
+                        {message.content}
+                      </a>
+                    ) : (
+                      <p>{message.content}</p>
+                    )}
+                    {isTransferCancelable(message) ? (
+                      <button
+                        type="button"
+                        className="icon-action-button icon-action-button-danger"
+                        onClick={() => {
+                          if (!window.confirm(`确认取消 ${message.content} 的传输吗？`)) return
+                          onCancelFileTransfer(message.id)
+                        }}
+                        aria-label={`取消 ${message.content} 的传输`}
+                      >
+                        <CircleX aria-hidden="true" />
+                      </button>
+                    ) : null}
+                  </div>
                 ) : null}
-                {message.sender !== 'system' && message.downloadUrl ? (
-                  <a
-                    className="file-link"
-                    href={message.downloadUrl}
-                    download={message.content}
-                  >
-                    {message.content}
-                  </a>
+                {message.type !== 'file' && message.sender !== 'system' ? (
+                  <p>{message.content}</p>
                 ) : null}
                 {message.sender === 'system' ? <p>{message.content}</p> : null}
                 {message.meta ? <small>{message.meta}</small> : null}
@@ -281,4 +334,8 @@ function fileKindLabel(fileName: string) {
 
 function shouldShowProgress(progress?: number) {
   return typeof progress === 'number' && progress > 0 && progress < 1
+}
+
+function isTransferCancelable(message: Message) {
+  return message.type === 'file' && message.transferState === 'transferring'
 }

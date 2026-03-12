@@ -10,6 +10,7 @@ export type Message = {
   downloadUrl?: string
   progress?: number
   mimeType?: string
+  transferState?: 'transferring' | 'completed' | 'cancelled'
 }
 
 export type PendingAttachment = {
@@ -50,12 +51,15 @@ export type IncomingTransfer = {
 }
 
 export type OutgoingTransfer = {
+  transferId: string
   file: File
   bytes: Uint8Array
   batchId?: string
   batchTotal?: number
   chunkSize: number
   totalChunks: number
+  nextChunk: number
+  isSending: boolean
 }
 
 export type AppSettings = {
@@ -84,5 +88,6 @@ export type DirectPayload =
   | { type: 'file_chunk'; transferId: string; chunkIndex: number; chunk: string }
   | { type: 'file_complete'; transferId: string }
   | { type: 'file_received'; transferId: string }
+  | { type: 'file_cancel'; transferId: string }
   | { type: 'pong' }
   | { type: 'error'; text: string }

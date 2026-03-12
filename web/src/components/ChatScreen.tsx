@@ -6,9 +6,10 @@ import { MessageList } from './MessageList'
 import { ChatSidebar } from './ChatSidebar'
 
 type ChatScreenProps = {
+  browserIp: string
+  browserPort: string
   canCompose: boolean
   canSend: boolean
-  connectionAddress: string
   conversationTitle: string
   directStatus: string
   draft: string
@@ -16,23 +17,27 @@ type ChatScreenProps = {
   fileInputRef: RefObject<HTMLInputElement | null>
   localDeviceName: string
   messages: Message[]
-  pageOrigin: string
-  pairingServiceOrigin: string
   pendingAttachments: PendingAttachment[]
+  phoneIp: string
+  phonePort: string
   settings: AppSettings
+  wifiName: string
   onAppendFiles: (files: File[]) => void
   onDisconnect: () => void
   onDraftChange: (value: string) => void
   onFileChange: (event: ChangeEvent<HTMLInputElement>) => void
   onOpenFilePicker: () => void
+  onCancelBatchTransfers: (batchId: string) => void
+  onCancelFileTransfer: (transferId: string) => void
   onRemovePendingAttachment: (id: string) => void
   onSendMessage: () => void
 }
 
 export function ChatScreen({
+  browserIp,
+  browserPort,
   canCompose,
   canSend,
-  connectionAddress,
   conversationTitle,
   directStatus,
   draft,
@@ -40,15 +45,18 @@ export function ChatScreen({
   fileInputRef,
   localDeviceName,
   messages,
-  pageOrigin,
-  pairingServiceOrigin,
   pendingAttachments,
+  phoneIp,
+  phonePort,
   settings,
+  wifiName,
   onAppendFiles,
   onDisconnect,
   onDraftChange,
   onFileChange,
   onOpenFilePicker,
+  onCancelBatchTransfers,
+  onCancelFileTransfer,
   onRemovePendingAttachment,
   onSendMessage,
 }: ChatScreenProps) {
@@ -72,25 +80,25 @@ export function ChatScreen({
   return (
     <section className="chat-layout">
       <ChatSidebar
-        connectionAddress={connectionAddress}
-        conversationTitle={conversationTitle}
+        browserIp={browserIp}
+        browserName={localDeviceName}
+        browserPort={browserPort}
         directStatus={directStatus}
         error={error}
-        localDeviceName={localDeviceName}
-        pageOrigin={pageOrigin}
-        pairingServiceOrigin={pairingServiceOrigin}
+        phoneIp={phoneIp}
+        phoneName={conversationTitle}
+        phonePort={phonePort}
+        wifiName={wifiName}
         onDisconnect={onDisconnect}
       />
 
       <section className="chat-main">
-        <header className="chat-toolbar">
-          <h2>{conversationTitle}</h2>
-          <button className="toolbar-more" type="button" aria-label="更多">
-            •••
-          </button>
-        </header>
-
-        <MessageList messages={messages} onOpenImagePreview={openImagePreview} />
+        <MessageList
+          messages={messages}
+          onCancelBatchTransfers={onCancelBatchTransfers}
+          onCancelFileTransfer={onCancelFileTransfer}
+          onOpenImagePreview={openImagePreview}
+        />
 
         <ChatComposer
           canCompose={canCompose}

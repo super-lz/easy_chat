@@ -26,7 +26,9 @@ export function MessageList({
   onCancelFileTransfer,
   onOpenImagePreview,
 }: MessageListProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
+  const shouldStickToBottomRef = useRef(true)
   const renderItems = useMemo<RenderItem[]>(() => {
     const items: RenderItem[] = []
 
@@ -92,8 +94,22 @@ export function MessageList({
   )
 
   useEffect(() => {
+    if (!shouldStickToBottomRef.current) {
+      return
+    }
     bottomRef.current?.scrollIntoView({ block: 'end' })
   }, [messages])
+
+  const handleScroll = () => {
+    const container = containerRef.current
+    if (!container) {
+      return
+    }
+
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight
+    shouldStickToBottomRef.current = distanceFromBottom < 72
+  }
 
   const downloadBatch = (items: Message[]) => {
     for (const item of items) {
@@ -116,7 +132,11 @@ export function MessageList({
 
   return (
     <>
-      <div className="message-area">
+      <div
+        ref={containerRef}
+        className="message-area"
+        onScroll={handleScroll}
+      >
         {renderItems.map((item) => {
           if (item.kind === 'group') {
             const downloadable = item.files.filter(
@@ -247,6 +267,10 @@ export function MessageList({
           }
 
         const message = item.message
+        const emojiOnlyMessage =
+          message.type === 'text' &&
+          message.sender !== 'system' &&
+          isEmojiOnlyMessage(message.content)
         return (
           <article
             key={message.id}
@@ -255,7 +279,9 @@ export function MessageList({
               }`}
           >
               <div
-                className={`message-bubble ${message.type === 'file' ? 'file-bubble' : ''}`}
+                className={`message-bubble ${message.type === 'file' ? 'file-bubble' : ''} ${
+                  emojiOnlyMessage ? 'emoji-only-bubble' : ''
+                }`}
               >
                 {message.type === 'file' &&
                 message.mimeType?.startsWith('image/') &&
@@ -338,4 +364,14 @@ function shouldShowProgress(progress?: number) {
 
 function isTransferCancelable(message: Message) {
   return message.type === 'file' && message.transferState === 'transferring'
+}
+
+function isEmojiOnlyMessage(content: string) {
+  const value = content.trim()
+  if (!value) {
+    return false
+  }
+
+  const stripped = value.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F\u200D\s]/gu, '')
+  return stripped.length === 0
 }

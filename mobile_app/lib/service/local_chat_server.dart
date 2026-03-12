@@ -9,6 +9,9 @@ typedef FileProgressHandler = void Function(String transferId, double progress);
 typedef FileDeliveredHandler = void Function(String transferId);
 typedef ServerStatusHandler = void Function(String status);
 
+const _binaryFileChunkFrame = 1;
+const _chunkPumpDelay = Duration(milliseconds: 8);
+
 class DirectFilePayload {
   const DirectFilePayload({
     required this.transferId,
@@ -54,6 +57,7 @@ class _IncomingFile {
   final int chunkSize;
   final int totalChunks;
   final List<Uint8List?> chunks;
+  int receivedBytes = 0;
 
   int contiguousCount() {
     var count = 0;
@@ -61,10 +65,6 @@ class _IncomingFile {
       count += 1;
     }
     return count;
-  }
-
-  int receivedBytes() {
-    return chunks.fold(0, (sum, part) => sum + (part?.length ?? 0));
   }
 
   bool get isComplete => contiguousCount() == totalChunks;
@@ -140,8 +140,8 @@ class LocalChatServer {
         continue;
       }
 
-      final socket = await WebSocketTransformer.upgrade(request);
-      _socket = socket;
+    final socket = await WebSocketTransformer.upgrade(request);
+    _socket = socket;
       onStatusChanged('Browser connected directly');
       socket.add(
         jsonEncode({'type': 'system', 'text': 'Direct socket connected'}),
@@ -154,6 +154,11 @@ class LocalChatServer {
       socket.listen(
         (raw) {
           try {
+            if (raw is List<int>) {
+              _handleBinaryChunk(Uint8List.fromList(raw));
+              return;
+            }
+
             final payload = jsonDecode(raw as String) as Map<String, dynamic>;
             switch (payload['type']) {
               case 'message':
@@ -301,10 +306,14 @@ class LocalChatServer {
       return;
     }
 
-    incoming.chunks[chunkIndex] ??= base64Decode(chunk);
-    final progress = incoming.size == 0
-        ? 0
-        : incoming.receivedBytes() / incoming.size;
+    final decodedChunk = base64Decode(chunk);
+    if (incoming.chunks[chunkIndex] != null) {
+      return;
+    }
+
+    incoming.chunks[chunkIndex] = decodedChunk;
+    incoming.receivedBytes += decodedChunk.length;
+    final progress = incoming.size == 0 ? 0 : incoming.receivedBytes / incoming.size;
     onFileProgress(transferId, progress.clamp(0, 1).toDouble());
   }
 
@@ -417,7 +426,7 @@ class LocalChatServer {
       return;
     }
 
-    const chunksPerTick = 4;
+    const chunksPerTick = 2;
 
     if (outgoing.nextChunk >= outgoing.totalChunks) {
       outgoing.isSending = false;
@@ -448,15 +457,14 @@ class LocalChatServer {
           ? outgoing.bytes.length
           : start + outgoing.chunkSize;
       final chunk = outgoing.bytes.sublist(start, end);
-      socket.add(
-        jsonEncode({
-          'type': 'file_chunk',
-          'transferId': outgoing.transferId,
-          'chunkIndex': chunkIndex,
-          'chunk': base64Encode(chunk),
-        }),
-      );
+      socket.add(_encodeBinaryChunkFrame(outgoing.transferId, chunkIndex, chunk));
       outgoing.nextChunk = chunkIndex + 1;
+      onFileProgress(
+        transferId,
+        outgoing.totalChunks == 0
+            ? 0
+            : (outgoing.nextChunk / outgoing.totalChunks).clamp(0, 1).toDouble(),
+      );
     }
 
     if (!_outgoingFiles.containsKey(transferId)) {
@@ -475,11 +483,31 @@ class LocalChatServer {
       return;
     }
 
-    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(_chunkPumpDelay);
     if (_socket == null || !identical(_socket, socket)) {
       return;
     }
     _scheduleChunkPump(socket, outgoing);
+  }
+
+  void _handleBinaryChunk(Uint8List frame) {
+    final payload = _decodeBinaryChunkFrame(frame);
+    if (payload == null) {
+      return;
+    }
+
+    final incoming = _incomingFiles[payload.transferId];
+    if (incoming == null ||
+        payload.chunkIndex < 0 ||
+        payload.chunkIndex >= incoming.totalChunks ||
+        incoming.chunks[payload.chunkIndex] != null) {
+      return;
+    }
+
+    incoming.chunks[payload.chunkIndex] = payload.chunk;
+    incoming.receivedBytes += payload.chunk.length;
+    final progress = incoming.size == 0 ? 0 : incoming.receivedBytes / incoming.size;
+    onFileProgress(payload.transferId, progress.clamp(0, 1).toDouble());
   }
 
   void sendPhoneMessage(String text) {
@@ -528,4 +556,54 @@ class LocalChatServer {
     _server = null;
     onStatusChanged('Direct server offline');
   }
+}
+
+class _BinaryChunkPayload {
+  const _BinaryChunkPayload({
+    required this.transferId,
+    required this.chunkIndex,
+    required this.chunk,
+  });
+
+  final String transferId;
+  final int chunkIndex;
+  final Uint8List chunk;
+}
+
+Uint8List _encodeBinaryChunkFrame(
+  String transferId,
+  int chunkIndex,
+  Uint8List chunk,
+) {
+  final transferIdBytes = utf8.encode(transferId);
+  final headerLength = 7 + transferIdBytes.length;
+  final frame = Uint8List(headerLength + chunk.length);
+  final view = ByteData.sublistView(frame);
+
+  view.setUint8(0, _binaryFileChunkFrame);
+  view.setUint16(1, transferIdBytes.length);
+  view.setUint32(3, chunkIndex);
+  frame.setRange(7, headerLength, transferIdBytes);
+  frame.setRange(headerLength, frame.length, chunk);
+  return frame;
+}
+
+_BinaryChunkPayload? _decodeBinaryChunkFrame(Uint8List frame) {
+  if (frame.length < 7 || frame[0] != _binaryFileChunkFrame) {
+    return null;
+  }
+
+  final view = ByteData.sublistView(frame);
+  final transferIdLength = view.getUint16(1);
+  final headerLength = 7 + transferIdLength;
+  if (frame.length < headerLength) {
+    return null;
+  }
+
+  final transferId = utf8.decode(frame.sublist(7, headerLength));
+  return _BinaryChunkPayload(
+    transferId: transferId,
+    chunkIndex: view.getUint32(3),
+    chunk: frame.sublist(headerLength),
+  );
 }

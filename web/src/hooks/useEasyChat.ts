@@ -75,6 +75,10 @@ export function useEasyChat() {
     transportRef.current = new DirectTransportClient({
       onOpen: (nextEndpoint) => {
         reconnectAttemptsRef.current = 0
+        shouldReconnectRef.current = true
+        unsubscribePairingRef.current?.()
+        unsubscribePairingRef.current = null
+        setSession(null)
         setError(null)
         setDirectStatus('已直连')
         setPhase('chat')
@@ -142,10 +146,10 @@ export function useEasyChat() {
         markTransferCancelled(setMessages, event.transferId, event.size)
       },
       onSystemMessage: (text) => {
-        appendSystemMessage(setMessages, text)
+        appendSystemMessage(setMessages, translateSystemText(text))
       },
       onProtocolError: (text) => {
-        appendSystemMessage(setMessages, text)
+        appendSystemMessage(setMessages, translateSystemText(text))
       },
       onConnectionError: () => {
         setDirectStatus('连接失败')
@@ -172,8 +176,7 @@ export function useEasyChat() {
           setError('无法连接到手机，请确认手机仍在当前 Wi‑Fi 下且 App 保持打开。')
         }
 
-        if (!opened && sessionRef.current === null) {
-          clearStoredEndpoint()
+        if (!opened && sessionRef.current !== null) {
           void createSession(false)
         }
       },
@@ -216,6 +219,11 @@ export function useEasyChat() {
   useEffect(() => {
     if (!endpoint) return
 
+    shouldReconnectRef.current = true
+    unsubscribePairingRef.current?.()
+    unsubscribePairingRef.current = null
+    setSession(null)
+
     if (settings.rememberConnection) {
       persistEndpoint(endpoint)
     } else {
@@ -245,6 +253,7 @@ export function useEasyChat() {
 
   async function createSession(clearRemembered = true) {
     unsubscribePairingRef.current?.()
+    unsubscribePairingRef.current = null
     shouldReconnectRef.current = false
     transportRef.current?.disconnect()
     transportRef.current?.resetTransfers()
@@ -276,6 +285,7 @@ export function useEasyChat() {
       unsubscribePairingRef.current = subscribeToPairingSession(PAIRING_API, data.sessionId, {
         onStatus: (payload) => {
           if (payload.phoneEndpoint) {
+            setSession(null)
             setEndpoint(payload.phoneEndpoint)
           }
         },
@@ -459,6 +469,16 @@ function appendSystemMessage(setMessages: React.Dispatch<React.SetStateAction<Me
       content: text,
     },
   ])
+}
+
+function translateSystemText(text: string) {
+  if (text === 'Direct socket connected') {
+    return '直连通道已建立'
+  }
+  if (text === 'Invalid JSON message') {
+    return '收到无效协议消息'
+  }
+  return text
 }
 
 function replaceTransferProgress(

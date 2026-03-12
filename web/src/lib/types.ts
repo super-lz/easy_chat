@@ -47,13 +47,13 @@ export type IncomingTransfer = {
   batchTotal?: number
   chunkSize: number
   totalChunks: number
+  receivedBytes: number
   chunks: Array<Uint8Array | null>
 }
 
 export type OutgoingTransfer = {
   transferId: string
   file: File
-  bytes: Uint8Array
   batchId?: string
   batchTotal?: number
   chunkSize: number

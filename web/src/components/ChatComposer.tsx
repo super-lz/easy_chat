@@ -42,6 +42,7 @@ export function ChatComposer({
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false)
   const composerInputRef = useRef<HTMLInputElement | null>(null)
   const emojiPopoverRef = useRef<HTMLDivElement | null>(null)
+  const selectionRangeRef = useRef({ start: draft.length, end: draft.length })
   const hasPendingAttachments = pendingAttachments.length > 0
   const pendingPreviewSlides = pendingAttachments
     .filter((attachment) => attachment.previewUrl)
@@ -92,6 +93,12 @@ export function ChatComposer({
     })
   }, [hasPendingAttachments])
 
+  useEffect(() => {
+    if (draft.length < selectionRangeRef.current.start) {
+      selectionRangeRef.current = { start: draft.length, end: draft.length }
+    }
+  }, [draft])
+
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (sendWithEnter && event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
@@ -128,18 +135,23 @@ export function ChatComposer({
   }
 
   const insertEmoji = (emojiData: EmojiClickData) => {
-    const input = composerInputRef.current
-    const selectionStart = input?.selectionStart ?? draft.length
-    const selectionEnd = input?.selectionEnd ?? draft.length
+    const { start, end } = selectionRangeRef.current
+    const selectionStart = Math.min(start, draft.length)
+    const selectionEnd = Math.min(end, draft.length)
     const nextDraft = `${draft.slice(0, selectionStart)}${emojiData.emoji}${draft.slice(selectionEnd)}`
     const nextCursor = selectionStart + emojiData.emoji.length
 
+    selectionRangeRef.current = { start: nextCursor, end: nextCursor }
     onDraftChange(nextDraft)
+  }
 
-    window.requestAnimationFrame(() => {
-      composerInputRef.current?.focus()
-      composerInputRef.current?.setSelectionRange(nextCursor, nextCursor)
-    })
+  const syncSelectionRange = () => {
+    const input = composerInputRef.current
+    if (!input) return
+    selectionRangeRef.current = {
+      start: input.selectionStart ?? draft.length,
+      end: input.selectionEnd ?? draft.length,
+    }
   }
 
   return (
@@ -209,7 +221,10 @@ export function ChatComposer({
           type="button"
           aria-label="表情"
           aria-expanded={isEmojiPickerOpen}
-          onClick={() => setIsEmojiPickerOpen((current) => !current)}
+          onClick={() => {
+            syncSelectionRange()
+            setIsEmojiPickerOpen((current) => !current)
+          }}
           disabled={!canCompose}
         >
           <Smile aria-hidden="true" />
@@ -243,7 +258,16 @@ export function ChatComposer({
       <input
         ref={composerInputRef}
         value={draft}
-        onChange={(event) => onDraftChange(event.target.value)}
+        onChange={(event) => {
+          onDraftChange(event.target.value)
+          selectionRangeRef.current = {
+            start: event.target.selectionStart ?? event.target.value.length,
+            end: event.target.selectionEnd ?? event.target.value.length,
+          }
+        }}
+        onClick={syncSelectionRange}
+        onKeyUp={syncSelectionRange}
+        onSelect={syncSelectionRange}
         placeholder={hasPendingAttachments ? '可继续输入文字或表情，发送后会和文件一起发出' : '按 Enter 发送消息...'}
         onKeyDown={handleKeyDown}
         disabled={!canCompose}

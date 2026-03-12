@@ -1,6 +1,9 @@
 import type { DirectPayload, IncomingTransfer, OutgoingTransfer, PhoneEndpoint } from './types'
 
-const DEFAULT_CHUNK_SIZE = 128 * 1024
+const DEFAULT_CHUNK_SIZE = 256 * 1024
+const CHUNKS_PER_TICK = 2
+const MAX_BUFFERED_AMOUNT = 768 * 1024
+const FILE_CHUNK_FRAME = 1
 
 export type FileBatch = {
   id: string
@@ -69,6 +72,7 @@ export class DirectTransportClient {
   private incomingTransfers = new Map<string, IncomingTransfer>()
   private outgoingTransfers = new Map<string, OutgoingTransfer>()
   private opened = false
+  private readonly expectedCloseSockets = new WeakSet<WebSocket>()
   private readonly callbacks: DirectTransportCallbacks
 
   constructor(callbacks: DirectTransportCallbacks) {
@@ -82,6 +86,7 @@ export class DirectTransportClient {
     const socket = new WebSocket(
       `ws://${endpoint.phoneIp}:${endpoint.phonePort}/ws?token=${encodeURIComponent(endpoint.token)}`,
     )
+    socket.binaryType = 'arraybuffer'
     this.socket = socket
     this.connectTimer = window.setTimeout(() => {
       if (this.socket !== socket || socket.readyState !== WebSocket.CONNECTING) return
@@ -99,13 +104,17 @@ export class DirectTransportClient {
     }
 
     socket.onmessage = (event) => {
-      this.handleMessage(event.data)
+      void this.handleSocketMessage(event.data)
     }
 
     socket.onclose = () => {
       this.clearConnectTimer()
       if (this.socket === socket) {
         this.socket = null
+      }
+      if (this.expectedCloseSockets.has(socket)) {
+        this.expectedCloseSockets.delete(socket)
+        return
       }
       this.callbacks.onClose({ opened: this.opened })
     }
@@ -117,7 +126,10 @@ export class DirectTransportClient {
 
   disconnect() {
     this.clearConnectTimer()
-    this.socket?.close()
+    if (this.socket) {
+      this.expectedCloseSockets.add(this.socket)
+      this.socket.close()
+    }
     this.socket = null
     this.opened = false
   }
@@ -132,15 +144,13 @@ export class DirectTransportClient {
   }
 
   async queueFile(file: File, batch?: FileBatch) {
-    const bytes = new Uint8Array(await file.arrayBuffer())
     const transferId = `file-${Date.now()}`
     const mimeType = file.type || 'application/octet-stream'
-    const totalChunks = Math.ceil(bytes.length / DEFAULT_CHUNK_SIZE)
+    const totalChunks = Math.ceil(file.size / DEFAULT_CHUNK_SIZE)
 
     this.outgoingTransfers.set(transferId, {
       transferId,
       file,
-      bytes,
       batchId: batch?.id,
       batchTotal: batch?.total,
       chunkSize: DEFAULT_CHUNK_SIZE,
@@ -208,6 +218,20 @@ export class DirectTransportClient {
     return cancelled
   }
 
+  private async handleSocketMessage(raw: string | ArrayBuffer | Blob) {
+    if (raw instanceof ArrayBuffer) {
+      this.handleBinaryChunk(new Uint8Array(raw))
+      return
+    }
+
+    if (raw instanceof Blob) {
+      this.handleBinaryChunk(new Uint8Array(await raw.arrayBuffer()))
+      return
+    }
+
+    this.handleMessage(raw)
+  }
+
   private handleMessage(raw: string) {
     const payload = JSON.parse(raw) as DirectPayload
 
@@ -266,6 +290,7 @@ export class DirectTransportClient {
         batchTotal: payload.batchTotal,
         chunkSize: payload.chunkSize,
         totalChunks: payload.totalChunks,
+        receivedBytes: 0,
         chunks: Array.from({ length: payload.totalChunks }, () => null),
       })
       this.callbacks.onIncomingFileStart({
@@ -307,12 +332,16 @@ export class DirectTransportClient {
       return
     }
 
-    transfer.chunks[chunkIndex] ??= Uint8Array.from(atob(encodedChunk), (char) => char.charCodeAt(0))
-    const loaded = transfer.chunks.reduce((sum, chunk) => sum + (chunk?.byteLength ?? 0), 0)
+    const nextChunk = Uint8Array.from(atob(encodedChunk), (char) => char.charCodeAt(0))
+    if (transfer.chunks[chunkIndex]) {
+      return
+    }
+    transfer.chunks[chunkIndex] = nextChunk
+    transfer.receivedBytes += nextChunk.byteLength
     this.callbacks.onIncomingFileProgress({
       transferId,
       size: transfer.size,
-      progress: transfer.size === 0 ? 0 : loaded / transfer.size,
+      progress: transfer.size === 0 ? 0 : transfer.receivedBytes / transfer.size,
     })
   }
 
@@ -405,11 +434,11 @@ export class DirectTransportClient {
     if (outgoing.isSending) return
     outgoing.isSending = true
     window.setTimeout(() => {
-      this.pumpFileChunks(outgoing.transferId)
+      void this.pumpFileChunks(outgoing.transferId)
     }, 0)
   }
 
-  private pumpFileChunks(transferId: string) {
+  private async pumpFileChunks(transferId: string) {
     const outgoing = this.outgoingTransfers.get(transferId)
     if (!outgoing) return
 
@@ -419,7 +448,6 @@ export class DirectTransportClient {
     }
 
     const socket = this.socket
-    const chunksPerTick = 4
 
     if (outgoing.nextChunk >= outgoing.totalChunks) {
       outgoing.isSending = false
@@ -427,21 +455,30 @@ export class DirectTransportClient {
       return
     }
 
-    const endChunk = Math.min(outgoing.nextChunk + chunksPerTick, outgoing.totalChunks)
+    if (socket.bufferedAmount > MAX_BUFFERED_AMOUNT) {
+      outgoing.isSending = false
+      window.setTimeout(() => this.scheduleChunkPump(outgoing), 16)
+      return
+    }
+
+    const endChunk = Math.min(outgoing.nextChunk + CHUNKS_PER_TICK, outgoing.totalChunks)
 
     for (let chunkIndex = outgoing.nextChunk; chunkIndex < endChunk; chunkIndex += 1) {
       if (!this.outgoingTransfers.has(transferId)) {
         return
       }
-      const start = chunkIndex * outgoing.chunkSize
-      const end = Math.min(start + outgoing.chunkSize, outgoing.bytes.length)
-      const chunk = outgoing.bytes.slice(start, end)
-      let binary = ''
-      chunk.forEach((value) => {
-        binary += String.fromCharCode(value)
-      })
-      socket.send(JSON.stringify({ type: 'file_chunk', transferId, chunkIndex, chunk: btoa(binary) }))
+      const chunk = await this.readFileChunk(outgoing.file, chunkIndex, outgoing.chunkSize)
+      socket.send(encodeBinaryChunkFrame(transferId, chunkIndex, chunk))
       outgoing.nextChunk = chunkIndex + 1
+      this.callbacks.onOutgoingFileProgress({
+        transferId,
+        size: outgoing.file.size,
+        progress: outgoing.totalChunks === 0 ? 0 : outgoing.nextChunk / outgoing.totalChunks,
+      })
+
+      if (socket.bufferedAmount > MAX_BUFFERED_AMOUNT) {
+        break
+      }
     }
 
     if (!this.outgoingTransfers.has(transferId)) {
@@ -455,7 +492,37 @@ export class DirectTransportClient {
       return
     }
 
-    this.scheduleChunkPump(outgoing)
+    window.setTimeout(() => this.scheduleChunkPump(outgoing), 8)
+  }
+
+  private handleBinaryChunk(frame: Uint8Array) {
+    const payload = decodeBinaryChunkFrame(frame)
+    if (!payload) {
+      return
+    }
+
+    const transfer = this.incomingTransfers.get(payload.transferId)
+    if (!transfer || payload.chunkIndex < 0 || payload.chunkIndex >= transfer.totalChunks) {
+      return
+    }
+
+    if (transfer.chunks[payload.chunkIndex]) {
+      return
+    }
+
+    transfer.chunks[payload.chunkIndex] = payload.chunk
+    transfer.receivedBytes += payload.chunk.byteLength
+    this.callbacks.onIncomingFileProgress({
+      transferId: payload.transferId,
+      size: transfer.size,
+      progress: transfer.size === 0 ? 0 : transfer.receivedBytes / transfer.size,
+    })
+  }
+
+  private async readFileChunk(file: File, chunkIndex: number, chunkSize: number) {
+    const start = chunkIndex * chunkSize
+    const end = Math.min(start + chunkSize, file.size)
+    return new Uint8Array(await file.slice(start, end).arrayBuffer())
   }
 
   private sendTransferCancel(transferId: string) {
@@ -475,5 +542,46 @@ export class DirectTransportClient {
       window.clearTimeout(this.connectTimer)
       this.connectTimer = null
     }
+  }
+}
+
+function encodeBinaryChunkFrame(transferId: string, chunkIndex: number, chunk: Uint8Array) {
+  const transferIdBytes = new TextEncoder().encode(transferId)
+  const header = new ArrayBuffer(7 + transferIdBytes.length)
+  const view = new DataView(header)
+  const buffer = new Uint8Array(header)
+
+  view.setUint8(0, FILE_CHUNK_FRAME)
+  view.setUint16(1, transferIdBytes.length)
+  view.setUint32(3, chunkIndex)
+  buffer.set(transferIdBytes, 7)
+
+  const frame = new Uint8Array(buffer.byteLength + chunk.byteLength)
+  frame.set(buffer, 0)
+  frame.set(chunk, buffer.byteLength)
+  return frame.buffer
+}
+
+function decodeBinaryChunkFrame(frame: Uint8Array) {
+  if (frame.byteLength < 7 || frame[0] !== FILE_CHUNK_FRAME) {
+    return null
+  }
+
+  const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength)
+  const transferIdLength = view.getUint16(1)
+  const headerLength = 7 + transferIdLength
+  if (frame.byteLength < headerLength) {
+    return null
+  }
+
+  const chunkIndex = view.getUint32(3)
+  const transferId = new TextDecoder().decode(
+    frame.slice(7, headerLength),
+  )
+
+  return {
+    transferId,
+    chunkIndex,
+    chunk: frame.slice(headerLength),
   }
 }

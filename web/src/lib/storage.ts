@@ -15,7 +15,7 @@ export const initialMessages: Message[] = [
     id: 'm1',
     sender: 'system',
     type: 'text',
-    content: '打开手机 App 扫描二维码，连接成功后就可以像聊天一样互发消息和文件。',
+    content: '打开手机 App 扫描二维码，连接成功后就可以像聊天一样互发消息和文件',
   },
 ]
 

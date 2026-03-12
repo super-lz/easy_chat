@@ -146,11 +146,10 @@ Response:
 
 ## File transfer over direct WebSocket
 
-Files are transferred over the same direct socket using resumable chunk messages:
+Files are transferred over the same direct socket using JSON control messages plus resumable binary chunk frames:
 
 - `file_offer`
 - `file_resume`
-- `file_chunk`
 - `file_complete`
 - `file_received`
 - `file_cancel`
@@ -184,16 +183,15 @@ Receiver tells sender which next chunk index is still needed.
 
 ### File chunk
 
-`chunk` is base64-encoded binary data.
+Chunk data is sent as a binary WebSocket frame instead of base64 JSON.
 
-```json
-{
-  "type": "file_chunk",
-  "transferId": "file-1773140",
-  "chunkIndex": 3,
-  "chunk": "JVBERi0xLjQKJ..."
-}
-```
+Binary frame layout:
+
+- `1 byte`: frame type, currently `1`
+- `2 bytes`: UTF-8 byte length of `transferId`
+- `4 bytes`: `chunkIndex`
+- `N bytes`: UTF-8 `transferId`
+- remaining bytes: raw chunk payload
 
 ### File complete
 
@@ -238,6 +236,7 @@ Either side can cancel an in-flight transfer.
 - Browser caches the last direct phone endpoint locally for page refresh recovery
 - Browser retries direct socket connection automatically after unexpected disconnects
 - If the direct socket drops during a transfer, sender and receiver resume from the next missing chunk after reconnect
+- Text messages stay responsive during file transfer because file chunks are sent in throttled batches instead of flooding the socket buffer
 
 ### Current resume scope
 

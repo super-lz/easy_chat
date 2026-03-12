@@ -1,5 +1,5 @@
 import { useMemo, useState, type ChangeEvent, type RefObject } from 'react'
-import type { AppSettings, Message, PendingAttachment } from '../lib/types'
+import type { AppSettings, DirectConnectionState, Message, PendingAttachment } from '../lib/types'
 import { ChatComposer } from './ChatComposer'
 import { ImagePreviewLightbox, type PreviewSlide } from './ImagePreviewLightbox'
 import { MessageList } from './MessageList'
@@ -11,7 +11,7 @@ type ChatScreenProps = {
   canCompose: boolean
   canSend: boolean
   conversationTitle: string
-  directStatus: string
+  connectionState: DirectConnectionState
   draft: string
   error: string | null
   fileInputRef: RefObject<HTMLInputElement | null>
@@ -21,7 +21,6 @@ type ChatScreenProps = {
   phoneIp: string
   phonePort: string
   settings: AppSettings
-  wifiName: string
   onAppendFiles: (files: File[]) => void
   onDisconnect: () => void
   onDraftChange: (value: string) => void
@@ -29,6 +28,7 @@ type ChatScreenProps = {
   onOpenFilePicker: () => void
   onCancelBatchTransfers: (batchId: string) => void
   onCancelFileTransfer: (transferId: string) => void
+  onClearPendingAttachments: () => void
   onRemovePendingAttachment: (id: string) => void
   onSendMessage: () => void
 }
@@ -39,7 +39,7 @@ export function ChatScreen({
   canCompose,
   canSend,
   conversationTitle,
-  directStatus,
+  connectionState,
   draft,
   error,
   fileInputRef,
@@ -49,7 +49,6 @@ export function ChatScreen({
   phoneIp,
   phonePort,
   settings,
-  wifiName,
   onAppendFiles,
   onDisconnect,
   onDraftChange,
@@ -57,6 +56,7 @@ export function ChatScreen({
   onOpenFilePicker,
   onCancelBatchTransfers,
   onCancelFileTransfer,
+  onClearPendingAttachments,
   onRemovePendingAttachment,
   onSendMessage,
 }: ChatScreenProps) {
@@ -83,12 +83,11 @@ export function ChatScreen({
         browserIp={browserIp}
         browserName={localDeviceName}
         browserPort={browserPort}
-        directStatus={directStatus}
+        connectionState={connectionState}
         error={error}
         phoneIp={phoneIp}
         phoneName={conversationTitle}
         phonePort={phonePort}
-        wifiName={wifiName}
         onDisconnect={onDisconnect}
       />
 
@@ -112,6 +111,7 @@ export function ChatScreen({
           onFileChange={onFileChange}
           onOpenImagePreview={openImagePreview}
           onOpenFilePicker={onOpenFilePicker}
+          onClearPendingAttachments={onClearPendingAttachments}
           onRemovePendingAttachment={onRemovePendingAttachment}
           onSendMessage={onSendMessage}
         />

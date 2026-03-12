@@ -15,32 +15,83 @@ import {
   restoreSettings,
   restoreStoredEndpoint,
 } from '../lib/storage'
-import type { AppSettings, Message, PendingAttachment, PairingSession, PhoneEndpoint } from '../lib/types'
+import type {
+  AppSettings,
+  DirectConnectionState,
+  Message,
+  PendingAttachment,
+  PairingSession,
+  PhoneEndpoint,
+} from '../lib/types'
 
 const PAIRING_API = import.meta.env.VITE_PAIRING_API_URL ?? ''
-const MAX_RECONNECT_ATTEMPTS = 5
 const DIRECT_CONNECT_TIMEOUT_MS = 5000
+const MAX_RECONNECT_DELAY_MS = 2000
+const IMMEDIATE_RECONNECT_COOLDOWN_MS = 800
+const DEBUG_LOG_THROTTLE_MS = 400
+const THROTTLED_DEBUG_EVENTS = new Set([
+  'socket error',
+  'socket close',
+  'connect transport',
+  'schedule reconnect',
+  'immediate reconnect trigger',
+])
 
 export type AppPhase = 'pairing' | 'connecting' | 'chat'
 
+const debugEventTimestamps = new Map<string, number>()
+const RECONNECT_GUIDANCE = '连接已断开，重连中，请确保 App 保留在前台'
+let localMessageSequence = 0
+
+function logConnectionDebug(event: string, detail?: unknown) {
+  if (!import.meta.env.DEV) return
+  if (THROTTLED_DEBUG_EVENTS.has(event)) {
+    const now = Date.now()
+    const lastLoggedAt = debugEventTimestamps.get(event) ?? 0
+    if (now - lastLoggedAt < DEBUG_LOG_THROTTLE_MS) {
+      return
+    }
+    debugEventTimestamps.set(event, now)
+  }
+  console.info(`[easy-chat][connection] ${event}`, detail)
+}
+
+function getInitialBootstrapState() {
+  const settings = restoreSettings()
+  const endpoint = restoreStoredEndpoint()
+  logConnectionDebug('bootstrap', {
+    hasEndpoint: Boolean(endpoint),
+    endpoint,
+  })
+
+  return {
+    settings,
+    endpoint,
+    phase: endpoint ? ('connecting' as const) : ('pairing' as const),
+    isLoading: !endpoint,
+    connectionState: endpoint ? createRestoringState() : createIdleState(),
+  }
+}
+
 export function useEasyChat() {
-  const [phase, setPhase] = useState<AppPhase>('pairing')
+  const [bootstrapState] = useState(() => getInitialBootstrapState())
+  const [phase, setPhase] = useState<AppPhase>(bootstrapState.phase)
   const [countdown, setCountdown] = useState(0)
   const [draft, setDraft] = useState('')
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
   const [messages, setMessages] = useState<Message[]>(initialMessages)
   const [session, setSession] = useState<PairingSession | null>(null)
-  const [endpoint, setEndpoint] = useState<PhoneEndpoint | null>(null)
+  const [endpoint, setEndpoint] = useState<PhoneEndpoint | null>(bootstrapState.endpoint)
   const [error, setError] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [directStatus, setDirectStatus] = useState('等待手机共享地址')
-  const [settings, setSettings] = useState<AppSettings>(() => restoreSettings())
+  const [isLoading, setIsLoading] = useState(bootstrapState.isLoading)
+  const [connectionState, setConnectionState] = useState<DirectConnectionState>(bootstrapState.connectionState)
+  const [settings, setSettings] = useState<AppSettings>(bootstrapState.settings)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const reconnectTimerRef = useRef<number | null>(null)
   const reconnectAttemptsRef = useRef(0)
+  const lastReconnectStartedAtRef = useRef(0)
   const shouldReconnectRef = useRef(true)
   const unsubscribePairingRef = useRef<(() => void) | null>(null)
-  const sessionRef = useRef<PairingSession | null>(null)
   const settingsRef = useRef(settings)
   const transportRef = useRef<DirectTransportClient | null>(null)
 
@@ -68,24 +119,21 @@ export function useEasyChat() {
   }, [settings])
 
   useEffect(() => {
-    sessionRef.current = session
-  }, [session])
-
-  useEffect(() => {
     transportRef.current = new DirectTransportClient({
       onOpen: (nextEndpoint) => {
+        logConnectionDebug('socket open', nextEndpoint)
         reconnectAttemptsRef.current = 0
         shouldReconnectRef.current = true
         unsubscribePairingRef.current?.()
         unsubscribePairingRef.current = null
         setSession(null)
         setError(null)
-        setDirectStatus('已直连')
+        setConnectionState(createConnectedState())
         setPhase('chat')
         setMessages((current) => [
           ...current,
           {
-            id: `system-open-${Date.now()}`,
+            id: createLocalId('system-open'),
             sender: 'system',
             type: 'text',
             content: `已连接到 ${nextEndpoint.phoneIp}:${nextEndpoint.phonePort}`,
@@ -96,7 +144,7 @@ export function useEasyChat() {
         setMessages((current) => [
           ...current,
           {
-            id: `phone-${Date.now()}`,
+            id: createLocalId('phone'),
             sender: 'phone',
             type: 'text',
             content: text,
@@ -152,32 +200,30 @@ export function useEasyChat() {
         appendSystemMessage(setMessages, translateSystemText(text))
       },
       onConnectionError: () => {
-        setDirectStatus('连接失败')
-        setError('无法连接到手机，请确认手机仍在当前 Wi‑Fi 下且 App 保持打开。')
-      },
-      onClose: ({ opened }) => {
-        if (
-          shouldReconnectRef.current &&
-          settingsRef.current.autoReconnect &&
-          endpoint &&
-          reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS
-        ) {
-          reconnectAttemptsRef.current += 1
-          const attempt = reconnectAttemptsRef.current
-          setDirectStatus(`重连中 (${attempt}/${MAX_RECONNECT_ATTEMPTS})`)
-          reconnectTimerRef.current = window.setTimeout(() => {
-            connectDirectTransport(endpoint)
-          }, Math.min(1500 * attempt, 5000))
+        logConnectionDebug('socket error', { endpoint })
+        if (endpoint && shouldReconnectRef.current && settingsRef.current.autoReconnect) {
+          setConnectionState(createReconnectState(reconnectAttemptsRef.current))
+          setError(RECONNECT_GUIDANCE)
           return
         }
 
-        setDirectStatus(opened ? '连接已断开' : '连接失败')
-        if (!opened) {
-          setError('无法连接到手机，请确认手机仍在当前 Wi‑Fi 下且 App 保持打开。')
+        setConnectionState(createFailedState())
+        setError('无法连接到手机，请确认手机仍在当前 Wi‑Fi 下且 App 保持打开')
+      },
+      onRemoteDisconnect: () => {
+        logConnectionDebug('remote disconnect', { endpoint })
+        void createSession('peer_disconnect', true)
+      },
+      onClose: ({ opened }) => {
+        logConnectionDebug('socket close', { opened, endpoint })
+        if (endpoint && scheduleReconnect(endpoint, opened)) {
+          return
         }
 
-        if (!opened && sessionRef.current !== null) {
-          void createSession(false)
+        setPhase('connecting')
+        setConnectionState(createFailedState(opened ? '连接已断开' : '连接失败'))
+        if (!opened) {
+          setError('无法连接到手机，请确认手机仍在当前 Wi‑Fi 下且 App 保持打开')
         }
       },
     })
@@ -189,14 +235,15 @@ export function useEasyChat() {
   }, [endpoint])
 
   useEffect(() => {
-    const restored = settings.rememberConnection ? restoreStoredEndpoint() : null
-    if (restored) {
-      setEndpoint(restored)
-      setDirectStatus('正在恢复上一次连接')
+    logConnectionDebug('mount restore check', {
+      restored: bootstrapState.endpoint,
+    })
+    if (bootstrapState.endpoint) {
+      setConnectionState(createRestoringState())
       setPhase('connecting')
       setIsLoading(false)
     } else {
-      void createSession()
+      void createSession('mount_without_endpoint')
     }
 
     return () => {
@@ -204,43 +251,106 @@ export function useEasyChat() {
       transportRef.current?.disconnect()
       if (reconnectTimerRef.current) window.clearTimeout(reconnectTimerRef.current)
     }
-  }, [settings.rememberConnection])
+  }, [])
 
   useEffect(() => {
     if (!session) return
 
     const timer = window.setInterval(() => {
       setCountdown(Math.max(0, Math.ceil((session.expiresAt - Date.now()) / 1000)))
-    }, 250)
+    }, 1000)
 
     return () => window.clearInterval(timer)
   }, [session])
 
   useEffect(() => {
     if (!endpoint) return
+    logConnectionDebug('connect with endpoint', endpoint)
 
     shouldReconnectRef.current = true
     unsubscribePairingRef.current?.()
     unsubscribePairingRef.current = null
     setSession(null)
 
-    if (settings.rememberConnection) {
-      persistEndpoint(endpoint)
-    } else {
-      clearStoredEndpoint()
-    }
+    persistEndpoint(endpoint)
 
     setPhase('connecting')
-    setDirectStatus('正在连接手机')
+    setConnectionState(createRestoringState('正在连接手机'))
     connectDirectTransport(endpoint)
-  }, [endpoint, settings.rememberConnection])
+  }, [endpoint])
 
   useEffect(() => {
     persistSettings(settings)
   }, [settings])
 
+  useEffect(() => {
+    const triggerImmediateReconnect = () => {
+      if (!endpoint || !shouldReconnectRef.current || !settingsRef.current.autoReconnect) {
+        return
+      }
+      if (transportRef.current?.isOpen() || transportRef.current?.isConnecting()) {
+        return
+      }
+      if (Date.now() - lastReconnectStartedAtRef.current < IMMEDIATE_RECONNECT_COOLDOWN_MS) {
+        return
+      }
+
+      logConnectionDebug('immediate reconnect trigger', {
+        endpoint,
+        visibilityState: document.visibilityState,
+        online: navigator.onLine,
+      })
+      reconnectAttemptsRef.current += 1
+      setConnectionState(createReconnectState(reconnectAttemptsRef.current))
+      connectDirectTransport(endpoint)
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        triggerImmediateReconnect()
+      }
+    }
+
+    window.addEventListener('focus', triggerImmediateReconnect)
+    window.addEventListener('online', triggerImmediateReconnect)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('focus', triggerImmediateReconnect)
+      window.removeEventListener('online', triggerImmediateReconnect)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [bootstrapState.endpoint])
+
   function connectDirectTransport(nextEndpoint: PhoneEndpoint) {
+    logConnectionDebug('connect transport', nextEndpoint)
+    lastReconnectStartedAtRef.current = Date.now()
+    if (reconnectTimerRef.current) {
+      window.clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = null
+    }
     transportRef.current?.connect(nextEndpoint, DIRECT_CONNECT_TIMEOUT_MS)
+  }
+
+  function scheduleReconnect(nextEndpoint: PhoneEndpoint, opened: boolean) {
+    if (!shouldReconnectRef.current || !settingsRef.current.autoReconnect) {
+      logConnectionDebug('skip reconnect', {
+        shouldReconnect: shouldReconnectRef.current,
+        autoReconnect: settingsRef.current.autoReconnect,
+      })
+      return false
+    }
+
+    reconnectAttemptsRef.current += 1
+    const attempt = reconnectAttemptsRef.current
+    const reconnectDelay = Math.min(Math.max(0, attempt - 1) * 500, MAX_RECONNECT_DELAY_MS)
+    logConnectionDebug('schedule reconnect', { attempt, opened, endpoint: nextEndpoint })
+    setConnectionState(createReconnectState(attempt))
+    setError(RECONNECT_GUIDANCE)
+    reconnectTimerRef.current = window.setTimeout(() => {
+      connectDirectTransport(nextEndpoint)
+    }, reconnectDelay)
+    return true
   }
 
   function releaseAttachmentPreviews(items: PendingAttachment[]) {
@@ -251,7 +361,8 @@ export function useEasyChat() {
     }
   }
 
-  async function createSession(clearRemembered = true) {
+  async function createSession(reason = 'unknown', clearRemembered = false) {
+    logConnectionDebug('create pairing session', { reason, clearRemembered })
     unsubscribePairingRef.current?.()
     unsubscribePairingRef.current = null
     shouldReconnectRef.current = false
@@ -267,7 +378,7 @@ export function useEasyChat() {
     setError(null)
     setSession(null)
     setEndpoint(null)
-    setDirectStatus('等待手机共享地址')
+    setConnectionState(createIdleState())
     setMessages(initialMessages)
     setPendingAttachments((current) => {
       releaseAttachmentPreviews(current)
@@ -284,16 +395,19 @@ export function useEasyChat() {
       setCountdown(Math.max(0, Math.ceil((data.expiresAt - Date.now()) / 1000)))
       unsubscribePairingRef.current = subscribeToPairingSession(PAIRING_API, data.sessionId, {
         onStatus: (payload) => {
+          logConnectionDebug('pairing status', payload)
           if (payload.phoneEndpoint) {
+            persistEndpoint(payload.phoneEndpoint)
             setSession(null)
             setEndpoint(payload.phoneEndpoint)
           }
         },
         onExpired: () => {
-          void createSession(false)
+          void createSession('pairing_expired', false)
         },
         onError: () => {
-          setError('配对服务连接已断开。')
+          logConnectionDebug('pairing stream error')
+          setError('配对服务连接已断开')
         },
       })
     } catch (caughtError) {
@@ -304,7 +418,8 @@ export function useEasyChat() {
   }
 
   function disconnectToPairing() {
-    void createSession()
+    transportRef.current?.disconnectPeer()
+    void createSession('manual_disconnect', true)
   }
 
   const sendMessage = async () => {
@@ -312,15 +427,15 @@ export function useEasyChat() {
     const text = draft.trim()
 
     if (!transport?.isOpen()) {
-      setError('当前连接不可用。')
+      setError('当前连接不可用')
       return
     }
 
     if (pendingAttachments.length > 0) {
-      const compositionId = `compose-${Date.now()}`
+      const compositionId = createLocalId('compose')
       const batch: FileBatch | undefined =
         pendingAttachments.length > 1
-          ? { id: `batch-${Date.now()}`, total: pendingAttachments.length }
+          ? { id: createLocalId('batch'), total: pendingAttachments.length }
           : undefined
 
       for (const attachment of pendingAttachments) {
@@ -334,7 +449,7 @@ export function useEasyChat() {
         setMessages((current) => [
           ...current,
           {
-            id: `m-${Date.now()}-caption`,
+            id: createLocalId('caption'),
             sender: 'browser',
             type: 'text',
             content: text,
@@ -357,7 +472,7 @@ export function useEasyChat() {
     setMessages((current) => [
       ...current,
       {
-        id: `m-${Date.now()}`,
+        id: createLocalId('message'),
         sender: 'browser',
         type: 'text',
         content: text,
@@ -377,7 +492,7 @@ export function useEasyChat() {
     const nextFiles = files
       .filter((file) => file.size > 0)
       .map<PendingAttachment>((file, index) => ({
-        id: `pending-${Date.now()}-${index}-${file.name}`,
+        id: createLocalId(`pending-${index}`),
         file,
         name: file.name,
         size: file.size,
@@ -397,6 +512,13 @@ export function useEasyChat() {
         URL.revokeObjectURL(removed.previewUrl)
       }
       return current.filter((item) => item.id !== id)
+    })
+  }
+
+  function clearPendingAttachments() {
+    setPendingAttachments((current) => {
+      releaseAttachmentPreviews(current)
+      return []
     })
   }
 
@@ -431,9 +553,9 @@ export function useEasyChat() {
     canCompose,
     canSend,
     connectionAddress,
+    connectionState,
     conversationTitle,
     countdown,
-    directStatus,
     draft,
     endpoint,
     error,
@@ -454,8 +576,44 @@ export function useEasyChat() {
     appendPendingFiles,
     cancelBatchTransfers,
     cancelFileTransfer,
+    clearPendingAttachments,
     pendingAttachments,
     removePendingAttachment,
+  }
+}
+
+function createIdleState(): DirectConnectionState {
+  return {
+    kind: 'idle',
+    label: '等待手机共享地址',
+  }
+}
+
+function createRestoringState(label = '正在恢复连接'): DirectConnectionState {
+  return {
+    kind: 'restoring',
+    label,
+  }
+}
+
+function createReconnectState(attempt: number): DirectConnectionState {
+  return {
+    kind: 'reconnecting',
+    label: attempt > 0 ? '重连中' : '正在恢复连接',
+  }
+}
+
+function createConnectedState(): DirectConnectionState {
+  return {
+    kind: 'connected',
+    label: '已连接',
+  }
+}
+
+function createFailedState(label = '连接失败'): DirectConnectionState {
+  return {
+    kind: 'failed',
+    label,
   }
 }
 
@@ -463,12 +621,20 @@ function appendSystemMessage(setMessages: React.Dispatch<React.SetStateAction<Me
   setMessages((current) => [
     ...current,
     {
-      id: `system-${Date.now()}`,
+      id: createLocalId('system'),
       sender: 'system',
       type: 'text',
       content: text,
     },
   ])
+}
+
+function createLocalId(prefix: string) {
+  localMessageSequence += 1
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}-${crypto.randomUUID()}`
+  }
+  return `${prefix}-${Date.now()}-${localMessageSequence}`
 }
 
 function translateSystemText(text: string) {

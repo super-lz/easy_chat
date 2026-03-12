@@ -4,6 +4,7 @@ const DEFAULT_CHUNK_SIZE = 256 * 1024
 const CHUNKS_PER_TICK = 2
 const MAX_BUFFERED_AMOUNT = 768 * 1024
 const FILE_CHUNK_FRAME = 1
+let transferSequence = 0
 
 export type FileBatch = {
   id: string
@@ -63,6 +64,7 @@ type DirectTransportCallbacks = {
   onSystemMessage: (text: string) => void
   onProtocolError: (text: string) => void
   onConnectionError: () => void
+  onRemoteDisconnect: () => void
   onClose: (context: { opened: boolean }) => void
 }
 
@@ -134,8 +136,19 @@ export class DirectTransportClient {
     this.opened = false
   }
 
+  disconnectPeer() {
+    if (this.socket?.readyState === WebSocket.OPEN) {
+      this.socket.send(JSON.stringify({ type: 'disconnect', sender: 'browser' }))
+    }
+    this.disconnect()
+  }
+
   isOpen() {
     return this.socket?.readyState === WebSocket.OPEN
+  }
+
+  isConnecting() {
+    return this.socket?.readyState === WebSocket.CONNECTING
   }
 
   sendText(text: string) {
@@ -144,7 +157,7 @@ export class DirectTransportClient {
   }
 
   async queueFile(file: File, batch?: FileBatch) {
-    const transferId = `file-${Date.now()}`
+    const transferId = createTransferId()
     const mimeType = file.type || 'application/octet-stream'
     const totalChunks = Math.ceil(file.size / DEFAULT_CHUNK_SIZE)
 
@@ -267,6 +280,11 @@ export class DirectTransportClient {
 
     if (payload.type === 'file_cancel') {
       this.handleFileCancel(payload.transferId)
+      return
+    }
+
+    if (payload.type === 'disconnect') {
+      this.handleRemoteDisconnect()
       return
     }
 
@@ -413,6 +431,18 @@ export class DirectTransportClient {
     })
   }
 
+  private handleRemoteDisconnect() {
+    const socket = this.socket
+    if (socket) {
+      this.expectedCloseSockets.add(socket)
+      socket.close()
+    }
+    this.socket = null
+    this.opened = false
+    this.clearConnectTimer()
+    this.callbacks.onRemoteDisconnect()
+  }
+
   private sendFileOffer(socket: WebSocket, transferId: string, outgoing: OutgoingTransfer) {
     socket.send(
       JSON.stringify({
@@ -543,6 +573,14 @@ export class DirectTransportClient {
       this.connectTimer = null
     }
   }
+}
+
+function createTransferId() {
+  transferSequence += 1
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `file-${crypto.randomUUID()}`
+  }
+  return `file-${Date.now()}-${transferSequence}`
 }
 
 function encodeBinaryChunkFrame(transferId: string, chunkIndex: number, chunk: Uint8Array) {

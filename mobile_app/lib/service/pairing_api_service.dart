@@ -8,7 +8,6 @@ class PairingRegisterRequest {
     required this.sessionId,
     required this.challenge,
     required this.deviceName,
-    required this.wifiName,
     required this.phoneIp,
     required this.phonePort,
     required this.token,
@@ -19,7 +18,6 @@ class PairingRegisterRequest {
   final String sessionId;
   final String challenge;
   final String deviceName;
-  final String wifiName;
   final String phoneIp;
   final int phonePort;
   final String token;
@@ -39,7 +37,6 @@ class PairingApiService {
       body: jsonEncode({
         'challenge': request.challenge,
         'deviceName': request.deviceName,
-        'wifiName': request.wifiName,
         'phoneIp': request.phoneIp,
         'phonePort': request.phonePort,
         'token': request.token,

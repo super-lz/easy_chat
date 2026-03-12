@@ -16,13 +16,20 @@ class ChatPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = context.watch<ChatSessionPProvider>();
 
+    if (!provider.hasCachedConnection) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) {
+          context.go(RoutePaths.scan);
+        }
+      });
+    }
+
     return Scaffold(
       body: SafeArea(
         child: Column(
           children: [
             ChatHeaderSection(
               deviceName: provider.deviceName,
-              wifiName: provider.wifiName,
               serverStatus: provider.serverStatus,
               token: provider.directToken,
               onDisconnect: () => _disconnect(context),

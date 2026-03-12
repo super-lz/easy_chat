@@ -8,6 +8,7 @@ typedef FileReceivedHandler = void Function(DirectFilePayload file);
 typedef FileProgressHandler = void Function(String transferId, double progress);
 typedef FileDeliveredHandler = void Function(String transferId);
 typedef ServerStatusHandler = void Function(String status);
+typedef RemoteDisconnectHandler = void Function();
 
 const _binaryFileChunkFrame = 1;
 const _chunkPumpDelay = Duration(milliseconds: 8);
@@ -100,6 +101,7 @@ class LocalChatServer {
     required this.onFileProgress,
     required this.onFileDelivered,
     required this.onStatusChanged,
+    required this.onRemoteDisconnect,
   });
 
   DirectMessageHandler onBrowserMessage;
@@ -107,18 +109,21 @@ class LocalChatServer {
   FileProgressHandler onFileProgress;
   FileDeliveredHandler onFileDelivered;
   ServerStatusHandler onStatusChanged;
+  RemoteDisconnectHandler onRemoteDisconnect;
 
   HttpServer? _server;
   WebSocket? _socket;
   String? _token;
   final Map<String, _IncomingFile> _incomingFiles = {};
   final Map<String, _OutgoingFile> _outgoingFiles = {};
+  bool _isStopping = false;
 
   bool get isRunning => _server != null;
 
   Future<void> start({required int port, required String token}) async {
     await stop();
 
+    _isStopping = false;
     _token = token;
     _server = await HttpServer.bind(InternetAddress.anyIPv4, port);
     onStatusChanged('Listening on port $port');
@@ -185,6 +190,10 @@ class LocalChatServer {
               case 'file_cancel':
                 _handleFileCancel(payload);
                 break;
+              case 'disconnect':
+                onRemoteDisconnect();
+                unawaited(stop());
+                break;
               case 'ping':
                 socket.add(jsonEncode({'type': 'pong'}));
                 break;
@@ -198,7 +207,9 @@ class LocalChatServer {
         onDone: () {
           if (identical(_socket, socket)) {
             _socket = null;
-            onStatusChanged('Waiting for browser reconnect');
+            if (!_isStopping) {
+              onStatusChanged('Waiting for browser reconnect');
+            }
           }
         },
       );
@@ -521,6 +532,15 @@ class LocalChatServer {
     );
   }
 
+  void sendDisconnectNotice() {
+    final socket = _socket;
+    if (socket == null) {
+      return;
+    }
+
+    socket.add(jsonEncode({'type': 'disconnect', 'sender': 'phone'}));
+  }
+
   void sendPhoneFile({
     required String transferId,
     required String name,
@@ -550,6 +570,7 @@ class LocalChatServer {
   }
 
   Future<void> stop() async {
+    _isStopping = true;
     await _socket?.close();
     _socket = null;
     await _server?.close(force: true);

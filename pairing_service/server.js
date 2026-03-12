@@ -229,7 +229,6 @@ const server = createServer(async (request, response) => {
         phoneIp: body.phoneIp,
         phonePort: body.phonePort,
         token: body.token,
-        wifiName: body.wifiName || 'Unknown Wi-Fi',
         protocolVersion: body.protocolVersion || 1,
       }
 

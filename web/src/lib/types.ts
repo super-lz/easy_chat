@@ -35,7 +35,6 @@ export type PhoneEndpoint = {
   phoneIp: string
   phonePort: number
   token: string
-  wifiName: string
   protocolVersion: number
 }
 
@@ -69,6 +68,11 @@ export type AppSettings = {
   showSystemMessages: boolean
 }
 
+export type DirectConnectionState = {
+  kind: 'idle' | 'restoring' | 'reconnecting' | 'connected' | 'failed'
+  label: string
+}
+
 export type DirectPayload =
   | { type: 'system'; text: string }
   | { type: 'message'; sender?: 'phone' | 'browser'; text: string }
@@ -89,5 +93,6 @@ export type DirectPayload =
   | { type: 'file_complete'; transferId: string }
   | { type: 'file_received'; transferId: string }
   | { type: 'file_cancel'; transferId: string }
+  | { type: 'disconnect'; sender?: 'phone' | 'browser' }
   | { type: 'pong' }
   | { type: 'error'; text: string }

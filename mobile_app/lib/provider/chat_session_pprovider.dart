@@ -29,6 +29,7 @@ class ChatSessionPProvider extends ChangeNotifier {
               onFileProgress: (_, _) {},
               onFileDelivered: (_) {},
               onStatusChanged: (_) {},
+              onRemoteDisconnect: () {},
             ) {
     _bindServerCallbacks();
   }
@@ -38,7 +39,6 @@ class ChatSessionPProvider extends ChangeNotifier {
   final TextEditingController ipController = TextEditingController();
   final TextEditingController portController =
       TextEditingController(text: '${AppConstants.defaultDirectPort}');
-  final TextEditingController wifiController = TextEditingController();
   final TextEditingController deviceController =
       TextEditingController(text: '我的手机');
   final List<ChatMessage> _messages = List<ChatMessage>.from(initialMessages);
@@ -53,6 +53,7 @@ class ChatSessionPProvider extends ChangeNotifier {
   bool _isRegistering = false;
   bool _hasCachedConnection = false;
   bool _disposed = false;
+  int _registrationAttemptId = 0;
 
   List<ChatMessage> get messages => List.unmodifiable(_messages);
   PairingPayload? get pairingPayload => _pairingPayload;
@@ -64,7 +65,6 @@ class ChatSessionPProvider extends ChangeNotifier {
   String get deviceName => deviceController.text.trim().isEmpty
       ? '我的手机'
       : deviceController.text.trim();
-  String get wifiName => wifiController.text.trim();
 
   void _bindServerCallbacks() {
     _chatServer.onBrowserMessage = (text) {
@@ -103,6 +103,10 @@ class ChatSessionPProvider extends ChangeNotifier {
       _serverStatus = _localizeServerStatus(status);
       _safeNotify();
     };
+
+    _chatServer.onRemoteDisconnect = () {
+      unawaited(disconnectAndClear(notifyPeer: false));
+    };
   }
 
   Future<bool> restoreConnectionIfNeeded() async {
@@ -120,7 +124,6 @@ class ChatSessionPProvider extends ChangeNotifier {
     }
 
     deviceController.text = cached.deviceName;
-    wifiController.text = cached.wifiName;
     ipController.text = localIp ?? cached.phoneIp;
     portController.text = cached.phonePort.toString();
     _directToken = cached.token;
@@ -149,6 +152,32 @@ class ChatSessionPProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> restoreServerOnForeground() async {
+    if (_disposed || _chatServer.isRunning) {
+      return;
+    }
+
+    final cached = await _persistence.restore();
+    if (cached == null) {
+      _hasCachedConnection = false;
+      _safeNotify();
+      return;
+    }
+
+    try {
+      await _chatServer.start(port: cached.phonePort, token: cached.token);
+      _directToken = cached.token;
+      _hasCachedConnection = true;
+      _serverStatus = _localizeServerStatus(
+        'Listening on port ${cached.phonePort}',
+      );
+      _safeNotify();
+    } catch (_) {
+      _hasCachedConnection = false;
+      _safeNotify();
+    }
+  }
+
   bool applyPairingInput() {
     final nextPayload = _parsePairingPayload(pairingController.text.trim());
     _registrationError = null;
@@ -166,6 +195,7 @@ class ChatSessionPProvider extends ChangeNotifier {
   Future<bool> registerPhone() async {
     final pairingPayload = _pairingPayload;
     if (pairingPayload == null) return false;
+    final attemptId = ++_registrationAttemptId;
 
     _isRegistering = true;
     _registrationError = null;
@@ -177,6 +207,9 @@ class ChatSessionPProvider extends ChangeNotifier {
     final localIp = await NetworkTools.detectBestLocalIp(
       preferredPeerIp: NetworkTools.extractHostIp(pairingPayload.serverUrl),
     );
+    if (!_isActiveRegistrationAttempt(attemptId)) {
+      return false;
+    }
     final phoneIp = (localIp ?? ipController.text.trim()).trim();
     if (!NetworkTools.isUsableIpv4(phoneIp)) {
       _registrationError = '无法获取本机局域网 IP，请手动确认后重试。';
@@ -188,6 +221,10 @@ class ChatSessionPProvider extends ChangeNotifier {
 
     try {
       await _chatServer.start(port: port, token: token);
+      if (!_isActiveRegistrationAttempt(attemptId)) {
+        await _chatServer.stop();
+        return false;
+      }
 
       await _pairingApiService.registerPhone(
         PairingRegisterRequest(
@@ -195,16 +232,18 @@ class ChatSessionPProvider extends ChangeNotifier {
           sessionId: pairingPayload.sessionId,
           challenge: pairingPayload.challenge,
           deviceName: deviceController.text.trim(),
-          wifiName: wifiController.text.trim(),
           phoneIp: phoneIp,
           phonePort: port,
           token: token,
         ),
       );
+      if (!_isActiveRegistrationAttempt(attemptId)) {
+        await _chatServer.stop();
+        return false;
+      }
 
       final cache = ConnectionCache(
         deviceName: deviceController.text.trim(),
-        wifiName: wifiController.text.trim(),
         phoneIp: phoneIp,
         phonePort: port,
         token: token,
@@ -228,16 +267,41 @@ class ChatSessionPProvider extends ChangeNotifier {
       return true;
     } catch (error) {
       await _chatServer.stop();
-      _registrationError = error.toString();
-      _safeNotify();
+      if (_isActiveRegistrationAttempt(attemptId)) {
+        _registrationError = error.toString();
+        _safeNotify();
+      }
       return false;
     } finally {
-      _isRegistering = false;
-      _safeNotify();
+      if (_registrationAttemptId == attemptId) {
+        _isRegistering = false;
+        _safeNotify();
+      }
     }
   }
 
-  Future<void> disconnectAndClear() async {
+  Future<void> abortConnecting() async {
+    if (!_isRegistering) {
+      return;
+    }
+
+    _registrationAttemptId += 1;
+    _isRegistering = false;
+    _registrationError = null;
+    _directToken = null;
+    _hasCachedConnection = false;
+    _pairingPayload = null;
+    await _chatServer.stop();
+    _messages
+      ..clear()
+      ..addAll(initialMessages);
+    _safeNotify();
+  }
+
+  Future<void> disconnectAndClear({bool notifyPeer = true}) async {
+    if (notifyPeer) {
+      _chatServer.sendDisconnectNotice();
+    }
     await _chatServer.stop();
     await _persistence.clear();
     _hasCachedConnection = false;
@@ -405,6 +469,10 @@ class ChatSessionPProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _isActiveRegistrationAttempt(int attemptId) {
+    return !_disposed && _registrationAttemptId == attemptId;
+  }
+
   @override
   void dispose() {
     _disposed = true;
@@ -412,7 +480,6 @@ class ChatSessionPProvider extends ChangeNotifier {
     pairingController.dispose();
     ipController.dispose();
     portController.dispose();
-    wifiController.dispose();
     deviceController.dispose();
     unawaited(_chatServer.stop());
     super.dispose();

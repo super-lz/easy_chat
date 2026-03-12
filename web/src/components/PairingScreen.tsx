@@ -5,8 +5,6 @@ type PairingScreenProps = {
   browserName: string
   countdown: number
   isLoading: boolean
-  pairingServiceOrigin: string
-  pageOrigin: string
   session: PairingSession | null
 }
 
@@ -14,8 +12,6 @@ export function PairingScreen({
   browserName,
   countdown,
   isLoading,
-  pairingServiceOrigin,
-  pageOrigin,
   session,
 }: PairingScreenProps) {
   const isLocalOnlyHost =
@@ -32,7 +28,9 @@ export function PairingScreen({
           {isLoading ? (
             <p className="placeholder-copy">正在生成二维码…</p>
           ) : session ? (
-            <QRCodeSVG value={session.pairingUrl} size={292} bgColor="#ffffff" fgColor="#283042" includeMargin />
+            <div className="pairing-qr-frame">
+              <QRCodeSVG value={session.pairingUrl} size={292} bgColor="#ffffff" fgColor="#283042" />
+            </div>
           ) : (
             <p className="placeholder-copy">二维码生成失败，请重试。</p>
           )}
@@ -49,16 +47,6 @@ export function PairingScreen({
         <div className="pairing-meta-inline">
           <span>有效期 {countdown}s</span>
           <span>{browserName}</span>
-        </div>
-        <div className="pairing-diagnostics">
-          <div className="diagnostic-card">
-            <span>页面</span>
-            <code>{pageOrigin}</code>
-          </div>
-          <div className="diagnostic-card">
-            <span>配对入口</span>
-            <code>{pairingServiceOrigin}</code>
-          </div>
         </div>
       </div>
     </section>

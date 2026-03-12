@@ -13,9 +13,9 @@ function App() {
   const {
     canCompose,
     canSend,
+    connectionState,
     conversationTitle,
     countdown,
-    directStatus,
     draft,
     error,
     fileInputRef,
@@ -31,6 +31,7 @@ function App() {
     appendPendingFiles,
     cancelBatchTransfers,
     cancelFileTransfer,
+    clearPendingAttachments,
     disconnectToPairing,
     sendMessage,
     setDraft,
@@ -43,8 +44,6 @@ function App() {
           browserName={browserName}
           countdown={countdown}
           isLoading={isLoading}
-          pairingServiceOrigin={import.meta.env.VITE_PAIRING_API_URL || window.location.origin}
-          pageOrigin={window.location.origin}
           session={session}
         />
       ) : (
@@ -53,8 +52,8 @@ function App() {
           browserPort={browserPort}
           canCompose={canCompose}
           canSend={canSend}
+          connectionState={connectionState}
           conversationTitle={conversationTitle}
-          directStatus={directStatus}
           draft={draft}
           error={error}
           fileInputRef={fileInputRef}
@@ -64,10 +63,10 @@ function App() {
           phoneIp={endpoint?.phoneIp ?? '等待连接'}
           phonePort={endpoint ? String(endpoint.phonePort) : '等待连接'}
           settings={settings}
-          wifiName={endpoint?.wifiName || '等待连接'}
           onAppendFiles={appendPendingFiles}
           onCancelBatchTransfers={cancelBatchTransfers}
           onCancelFileTransfer={cancelFileTransfer}
+          onClearPendingAttachments={clearPendingAttachments}
           onDisconnect={disconnectToPairing}
           onDraftChange={setDraft}
           onFileChange={(event) => void handleFileInput(event)}

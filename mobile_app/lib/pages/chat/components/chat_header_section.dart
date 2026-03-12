@@ -6,14 +6,12 @@ class ChatHeaderSection extends StatelessWidget {
   const ChatHeaderSection({
     super.key,
     required this.deviceName,
-    required this.wifiName,
     required this.serverStatus,
     required this.token,
     required this.onDisconnect,
   });
 
   final String deviceName;
-  final String wifiName;
   final String serverStatus;
   final String? token;
   final Future<void> Function() onDisconnect;
@@ -35,11 +33,6 @@ class ChatHeaderSection extends StatelessWidget {
                       style: Theme.of(
                         context,
                       ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      wifiName,
-                      style: const TextStyle(color: Color(0xFF6C675E)),
                     ),
                   ],
                 ),

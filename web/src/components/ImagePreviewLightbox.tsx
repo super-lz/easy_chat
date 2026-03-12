@@ -45,7 +45,11 @@ export function ImagePreviewLightbox({ openIndex, slides, onClose }: ImagePrevie
       }}
       render={{
         slideFooter: ({ slide }) => (
-          <div className="image-lightbox-footer">
+          <div
+            className="image-lightbox-footer"
+            onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
             <strong>{(slide as PreviewSlide).title ?? '图片预览'}</strong>
             <span>{(slide as PreviewSlide).description ?? '滚轮缩放，拖拽查看细节'}</span>
           </div>

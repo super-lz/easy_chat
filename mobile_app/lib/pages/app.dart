@@ -25,15 +25,23 @@ class _AppShell extends StatefulWidget {
   State<_AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<_AppShell> {
+class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
   late final ChatSessionPProvider _provider;
   late final _router = createAppRouter();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _provider = ChatSessionPProvider();
     unawaited(_bootstrapConnection());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_provider.restoreServerOnForeground());
+    }
   }
 
   Future<void> _bootstrapConnection() async {
@@ -48,6 +56,7 @@ class _AppShellState extends State<_AppShell> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _provider.dispose();
     super.dispose();
   }

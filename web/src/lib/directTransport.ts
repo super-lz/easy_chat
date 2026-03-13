@@ -14,6 +14,7 @@ export type FileBatch = {
 export type OutgoingFileDescriptor = {
   transferId: string
   file: File
+  compositionId?: string
   batchId?: string
   batchTotal?: number
   mimeType: string
@@ -25,6 +26,7 @@ export type IncomingFileStart = {
   name: string
   size: number
   mimeType: string
+  compositionId?: string
   batchId?: string
   batchTotal?: number
 }
@@ -47,6 +49,7 @@ export type IncomingFileComplete = {
   name: string
   size: number
   mimeType: string
+  compositionId?: string
   batchId?: string
   batchTotal?: number
   downloadUrl: string
@@ -54,7 +57,8 @@ export type IncomingFileComplete = {
 
 type DirectTransportCallbacks = {
   onOpen: (endpoint: PhoneEndpoint) => void
-  onTextMessage: (text: string) => void
+  onPeerMeta: (payload: { role: 'phone' | 'browser'; name: string; address: string }) => void
+  onTextMessage: (payload: { text: string; compositionId?: string }) => void
   onIncomingFileStart: (event: IncomingFileStart) => void
   onIncomingFileProgress: (event: FileProgressEvent) => void
   onIncomingFileComplete: (event: IncomingFileComplete) => void
@@ -151,12 +155,25 @@ export class DirectTransportClient {
     return this.socket?.readyState === WebSocket.CONNECTING
   }
 
-  sendText(text: string) {
+  sendText(text: string, compositionId?: string) {
     const socket = this.requireOpenSocket()
-    socket.send(JSON.stringify({ type: 'message', text }))
+    socket.send(JSON.stringify({ type: 'message', text, compositionId }))
   }
 
-  async queueFile(file: File, batch?: FileBatch) {
+  sendPeerMeta(meta: { role: 'phone' | 'browser'; name: string; address: string }) {
+    const socket = this.requireOpenSocket()
+    socket.send(
+      JSON.stringify({
+        type: 'peer_meta',
+        sender: 'browser',
+        role: meta.role,
+        name: meta.name,
+        address: meta.address,
+      }),
+    )
+  }
+
+  async queueFile(file: File, batch?: FileBatch, compositionId?: string) {
     const transferId = createTransferId()
     const mimeType = file.type || 'application/octet-stream'
     const totalChunks = Math.ceil(file.size / DEFAULT_CHUNK_SIZE)
@@ -164,6 +181,7 @@ export class DirectTransportClient {
     this.outgoingTransfers.set(transferId, {
       transferId,
       file,
+      compositionId,
       batchId: batch?.id,
       batchTotal: batch?.total,
       chunkSize: DEFAULT_CHUNK_SIZE,
@@ -175,6 +193,7 @@ export class DirectTransportClient {
     const descriptor: OutgoingFileDescriptor = {
       transferId,
       file,
+      compositionId,
       batchId: batch?.id,
       batchTotal: batch?.total,
       mimeType,
@@ -249,7 +268,22 @@ export class DirectTransportClient {
     const payload = JSON.parse(raw) as DirectPayload
 
     if (payload.type === 'message') {
-      this.callbacks.onTextMessage(payload.text)
+      this.callbacks.onTextMessage({
+        text: payload.text,
+        compositionId: payload.compositionId,
+      })
+      return
+    }
+
+    if (payload.type === 'peer_meta') {
+      if (!payload.role || !payload.name || !payload.address) {
+        return
+      }
+      this.callbacks.onPeerMeta({
+        role: payload.role,
+        name: payload.name,
+        address: payload.address,
+      })
       return
     }
 
@@ -304,6 +338,7 @@ export class DirectTransportClient {
         name: payload.name,
         size: payload.size,
         mimeType: payload.mimeType,
+        compositionId: payload.compositionId,
         batchId: payload.batchId,
         batchTotal: payload.batchTotal,
         chunkSize: payload.chunkSize,
@@ -316,6 +351,7 @@ export class DirectTransportClient {
         name: payload.name,
         size: payload.size,
         mimeType: payload.mimeType,
+        compositionId: payload.compositionId,
         batchId: payload.batchId,
         batchTotal: payload.batchTotal,
       })
@@ -390,6 +426,7 @@ export class DirectTransportClient {
       name: transfer.name,
       size: transfer.size,
       mimeType: transfer.mimeType,
+      compositionId: transfer.compositionId,
       batchId: transfer.batchId,
       batchTotal: transfer.batchTotal,
       downloadUrl: URL.createObjectURL(blob),
@@ -449,6 +486,7 @@ export class DirectTransportClient {
         type: 'file_offer',
         transferId,
         sender: 'browser',
+        compositionId: outgoing.compositionId,
         batchId: outgoing.batchId,
         batchTotal: outgoing.batchTotal,
         name: outgoing.file.name,

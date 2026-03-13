@@ -13,6 +13,7 @@ function App() {
   const {
     canCompose,
     canSend,
+    connectionAddress,
     connectionState,
     conversationTitle,
     countdown,
@@ -23,7 +24,6 @@ function App() {
     isLoading,
     pendingAttachments,
     phase,
-    endpoint,
     removePendingAttachment,
     session,
     settings,
@@ -36,6 +36,7 @@ function App() {
     sendMessage,
     setDraft,
   } = useEasyChat()
+  const { host: phoneIp, port: phonePort } = parseHostPort(connectionAddress)
 
   return (
     <main className={`app-frame ${phase === 'pairing' ? 'app-frame-pairing' : ''}`}>
@@ -60,8 +61,8 @@ function App() {
           localDeviceName={browserName}
           messages={visibleMessages}
           pendingAttachments={pendingAttachments}
-          phoneIp={endpoint?.phoneIp ?? '等待连接'}
-          phonePort={endpoint ? String(endpoint.phonePort) : '等待连接'}
+          phoneIp={phoneIp}
+          phonePort={phonePort}
           settings={settings}
           onAppendFiles={appendPendingFiles}
           onCancelBatchTransfers={cancelBatchTransfers}
@@ -77,6 +78,20 @@ function App() {
       )}
     </main>
   )
+}
+
+function parseHostPort(address: string) {
+  if (!address || !address.includes(':')) {
+    return { host: address || '等待连接', port: '等待连接' }
+  }
+  const lastColon = address.lastIndexOf(':')
+  if (lastColon <= 0 || lastColon >= address.length - 1) {
+    return { host: address || '等待连接', port: '等待连接' }
+  }
+  return {
+    host: address.slice(0, lastColon),
+    port: address.slice(lastColon + 1),
+  }
 }
 
 export default App

@@ -1,14 +1,17 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../common/app_constants.dart';
 import '../models/chat_message.dart';
 import '../models/connection_cache.dart';
 import '../models/initial_messages.dart';
+import '../models/pending_attachment.dart';
 import '../models/pairing_payload.dart';
 import '../service/connection_persistence.dart';
 import '../service/local_chat_server.dart';
@@ -20,28 +23,34 @@ class ChatSessionPProvider extends ChangeNotifier {
     ConnectionPersistence? persistence,
     LocalChatServer? chatServer,
     PairingApiService? pairingApiService,
-  })  : _persistence = persistence ?? ConnectionPersistence(),
-        _pairingApiService = pairingApiService ?? const PairingApiService(),
-        _chatServer = chatServer ??
-            LocalChatServer(
-              onBrowserMessage: (_) {},
-              onFileReceived: (_) {},
-              onFileProgress: (_, _) {},
-              onFileDelivered: (_) {},
-              onStatusChanged: (_) {},
-              onRemoteDisconnect: () {},
-            ) {
+  }) : _persistence = persistence ?? ConnectionPersistence(),
+       _pairingApiService = pairingApiService ?? const PairingApiService(),
+       _chatServer =
+           chatServer ??
+           LocalChatServer(
+             onBrowserMessage: (_) {},
+             onPeerMeta: (_) {},
+             onFileReceived: (_) {},
+             onFileProgress: (_, _) {},
+             onFileDelivered: (_) {},
+             onStatusChanged: (_) {},
+             onRemoteDisconnect: () {},
+           ) {
     _bindServerCallbacks();
+    messageController.addListener(_safeNotify);
   }
 
   final TextEditingController messageController = TextEditingController();
   final TextEditingController pairingController = TextEditingController();
   final TextEditingController ipController = TextEditingController();
-  final TextEditingController portController =
-      TextEditingController(text: '${AppConstants.defaultDirectPort}');
-  final TextEditingController deviceController =
-      TextEditingController(text: '我的手机');
+  final TextEditingController portController = TextEditingController(
+    text: '${AppConstants.defaultDirectPort}',
+  );
+  final TextEditingController deviceController = TextEditingController(
+    text: '我的手机',
+  );
   final List<ChatMessage> _messages = List<ChatMessage>.from(initialMessages);
+  final List<PendingAttachment> _pendingAttachments = [];
   final ConnectionPersistence _persistence;
   final PairingApiService _pairingApiService;
   final LocalChatServer _chatServer;
@@ -52,27 +61,37 @@ class ChatSessionPProvider extends ChangeNotifier {
   String? _directToken;
   bool _isRegistering = false;
   bool _hasCachedConnection = false;
+  String? _browserPeerName;
+  String? _browserPeerAddress;
   bool _disposed = false;
   int _registrationAttemptId = 0;
 
   List<ChatMessage> get messages => List.unmodifiable(_messages);
+  List<PendingAttachment> get pendingAttachments =>
+      List.unmodifiable(_pendingAttachments);
   PairingPayload? get pairingPayload => _pairingPayload;
   String? get registrationError => _registrationError;
   String get serverStatus => _serverStatus;
   String? get directToken => _directToken;
   bool get isRegistering => _isRegistering;
   bool get hasCachedConnection => _hasCachedConnection;
+  String get browserPeerName => _browserPeerName ?? '等待浏览器同步';
+  String get browserPeerAddress => _browserPeerAddress ?? '等待浏览器同步';
+  bool get canSend =>
+      messageController.text.trim().isNotEmpty ||
+      _pendingAttachments.isNotEmpty;
   String get deviceName => deviceController.text.trim().isEmpty
       ? '我的手机'
       : deviceController.text.trim();
 
   void _bindServerCallbacks() {
-    _chatServer.onBrowserMessage = (text) {
+    _chatServer.onBrowserMessage = (payload) {
       _messages.add(
         ChatMessage(
           id: 'msg-${DateTime.now().millisecondsSinceEpoch}',
           sender: 'browser',
-          text: text,
+          text: payload.text,
+          compositionId: payload.compositionId,
         ),
       );
       _safeNotify();
@@ -80,6 +99,14 @@ class ChatSessionPProvider extends ChangeNotifier {
 
     _chatServer.onFileReceived = (file) {
       unawaited(_handleReceivedFile(file));
+    };
+
+    _chatServer.onPeerMeta = (payload) {
+      if (payload.role == 'browser') {
+        _browserPeerName = payload.name;
+        _browserPeerAddress = payload.address;
+        _safeNotify();
+      }
     };
 
     _chatServer.onFileProgress = (transferId, progress) {
@@ -101,6 +128,9 @@ class ChatSessionPProvider extends ChangeNotifier {
 
     _chatServer.onStatusChanged = (status) {
       _serverStatus = _localizeServerStatus(status);
+      if (status == 'Browser connected directly') {
+        _syncPhonePeerMeta();
+      }
       _safeNotify();
     };
 
@@ -202,7 +232,8 @@ class ChatSessionPProvider extends ChangeNotifier {
     _safeNotify();
 
     final port =
-        int.tryParse(portController.text.trim()) ?? AppConstants.defaultDirectPort;
+        int.tryParse(portController.text.trim()) ??
+        AppConstants.defaultDirectPort;
     final token = 'token-${DateTime.now().millisecondsSinceEpoch}';
     final localIp = await NetworkTools.detectBestLocalIp(
       preferredPeerIp: NetworkTools.extractHostIp(pairingPayload.serverUrl),
@@ -290,7 +321,10 @@ class ChatSessionPProvider extends ChangeNotifier {
     _registrationError = null;
     _directToken = null;
     _hasCachedConnection = false;
+    _browserPeerName = null;
+    _browserPeerAddress = null;
     _pairingPayload = null;
+    _pendingAttachments.clear();
     await _chatServer.stop();
     _messages
       ..clear()
@@ -306,9 +340,12 @@ class ChatSessionPProvider extends ChangeNotifier {
     await _persistence.clear();
     _hasCachedConnection = false;
     _directToken = null;
+    _browserPeerName = null;
+    _browserPeerAddress = null;
     _pairingPayload = null;
     pairingController.clear();
     _registrationError = null;
+    _pendingAttachments.clear();
     _messages
       ..clear()
       ..addAll(initialMessages);
@@ -317,62 +354,137 @@ class ChatSessionPProvider extends ChangeNotifier {
 
   Future<void> sendDraft() async {
     final text = messageController.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty && _pendingAttachments.isEmpty) return;
 
-    _messages.add(
-      ChatMessage(
-        id: 'msg-${DateTime.now().millisecondsSinceEpoch}',
-        sender: 'phone',
-        text: text,
-      ),
-    );
+    final compositionId = _pendingAttachments.isNotEmpty
+        ? 'compose-${DateTime.now().millisecondsSinceEpoch}'
+        : null;
+    final batchId = _pendingAttachments.length > 1
+        ? 'batch-${DateTime.now().millisecondsSinceEpoch}'
+        : null;
+
+    if (_pendingAttachments.isNotEmpty) {
+      for (final attachment in _pendingAttachments) {
+        final transferId =
+            'outgoing-${DateTime.now().millisecondsSinceEpoch}-${attachment.name.hashCode}';
+        final batchTotal = _pendingAttachments.length > 1
+            ? _pendingAttachments.length
+            : null;
+
+        _messages.add(
+          ChatMessage(
+            id: transferId,
+            sender: 'phone',
+            text: attachment.name,
+            type: 'file',
+            compositionId: compositionId,
+            batchId: batchId,
+            batchTotal: batchTotal,
+            meta: '${_formatBytes(attachment.size)} • 0%',
+            bytes: attachment.bytes,
+            mimeType: attachment.mimeType,
+            progress: 0,
+          ),
+        );
+
+        _chatServer.sendPhoneFile(
+          transferId: transferId,
+          name: attachment.name,
+          mimeType: attachment.mimeType,
+          bytes: attachment.bytes,
+          compositionId: compositionId,
+          batchId: batchId,
+          batchTotal: batchTotal,
+        );
+      }
+      _pendingAttachments.clear();
+    }
+
+    if (text.isNotEmpty) {
+      _messages.add(
+        ChatMessage(
+          id: 'msg-${DateTime.now().millisecondsSinceEpoch}',
+          sender: 'phone',
+          text: text,
+          compositionId: compositionId,
+        ),
+      );
+      _chatServer.sendPhoneMessage(text, compositionId: compositionId);
+    }
+
     messageController.clear();
-    _chatServer.sendPhoneMessage(text);
     _safeNotify();
   }
 
-  Future<void> pickAndSendFile() async {
+  Future<void> pickPendingFiles() async {
     final result = await FilePicker.platform.pickFiles(
       withData: true,
       allowMultiple: true,
     );
-    final files = result?.files.where((file) => file.bytes != null).toList() ?? [];
+    final files =
+        result?.files.where((file) => file.bytes != null).toList() ?? [];
     if (files.isEmpty) return;
-
-    final batchId = files.length > 1
-        ? 'batch-${DateTime.now().millisecondsSinceEpoch}'
-        : null;
 
     for (final file in files) {
       final bytes = file.bytes!;
-      final mimeType = file.extension == null
-          ? 'application/octet-stream'
-          : 'application/${file.extension}';
-      final transferId =
-          'outgoing-${DateTime.now().millisecondsSinceEpoch}-${file.name.hashCode}';
-
-      _messages.add(
-        ChatMessage(
-          id: transferId,
-          sender: 'phone',
-          text: file.name,
-          meta: '${_formatBytes(bytes.length)} • 0%',
-          bytes: bytes,
-          mimeType: mimeType,
-          progress: 0,
-        ),
-      );
-
-      _chatServer.sendPhoneFile(
-        transferId: transferId,
+      _appendPendingAttachment(
         name: file.name,
-        mimeType: mimeType,
         bytes: bytes,
-        batchId: batchId,
-        batchTotal: files.length > 1 ? files.length : null,
+        mimeType: _inferMimeType(file.extension),
       );
     }
 
+    _safeNotify();
+  }
+
+  Future<void> pickPendingImagesFromGallery() async {
+    try {
+      final picker = ImagePicker();
+      final images = await picker.pickMultiImage();
+      if (images.isEmpty) return;
+
+      for (final image in images) {
+        final bytes = await image.readAsBytes();
+        if (bytes.isEmpty) continue;
+        _appendPendingAttachment(
+          name: image.name,
+          bytes: bytes,
+          mimeType: _inferMimeType(_extensionOf(image.name)),
+        );
+      }
+      _safeNotify();
+    } catch (_) {
+      // Ignore picker cancellation and platform errors.
+    }
+  }
+
+  Future<void> capturePendingImage() async {
+    try {
+      final picker = ImagePicker();
+      final image = await picker.pickImage(source: ImageSource.camera);
+      if (image == null) return;
+      final bytes = await image.readAsBytes();
+      if (bytes.isEmpty) return;
+
+      _appendPendingAttachment(
+        name: image.name,
+        bytes: bytes,
+        mimeType: _inferMimeType(_extensionOf(image.name)),
+      );
+      _safeNotify();
+    } catch (_) {
+      // Ignore picker cancellation and platform errors.
+    }
+  }
+
+  void removePendingAttachment(String id) {
+    _pendingAttachments.removeWhere((attachment) => attachment.id == id);
+    _safeNotify();
+  }
+
+  void clearPendingAttachments() {
+    if (_pendingAttachments.isEmpty) return;
+    _pendingAttachments.clear();
     _safeNotify();
   }
 
@@ -415,6 +527,10 @@ class ChatSessionPProvider extends ChangeNotifier {
         id: 'received-${file.transferId}',
         sender: 'browser',
         text: file.name,
+        type: 'file',
+        compositionId: file.compositionId,
+        batchId: file.batchId,
+        batchTotal: file.batchTotal,
         meta: '${_formatBytes(file.size)} • 已保存',
         bytes: file.bytes,
         mimeType: file.mimeType,
@@ -462,6 +578,55 @@ class ChatSessionPProvider extends ChangeNotifier {
       return '${(size / 1024).toStringAsFixed(1)} KB';
     }
     return '$size B';
+  }
+
+  String _inferMimeType(String? extension) {
+    final normalized = extension?.toLowerCase();
+    return switch (normalized) {
+      'png' => 'image/png',
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'gif' => 'image/gif',
+      'webp' => 'image/webp',
+      'heic' => 'image/heic',
+      'pdf' => 'application/pdf',
+      'txt' => 'text/plain',
+      'json' => 'application/json',
+      'csv' => 'text/csv',
+      'md' => 'text/markdown',
+      _ => 'application/octet-stream',
+    };
+  }
+
+  void _appendPendingAttachment({
+    required String name,
+    required List<int> bytes,
+    required String mimeType,
+  }) {
+    _pendingAttachments.add(
+      PendingAttachment(
+        id: 'pending-${DateTime.now().microsecondsSinceEpoch}-${name.hashCode}',
+        name: name,
+        size: bytes.length,
+        mimeType: mimeType,
+        bytes: bytes is Uint8List ? bytes : Uint8List.fromList(bytes),
+      ),
+    );
+  }
+
+  String? _extensionOf(String fileName) {
+    final dot = fileName.lastIndexOf('.');
+    if (dot < 0 || dot >= fileName.length - 1) {
+      return null;
+    }
+    return fileName.substring(dot + 1);
+  }
+
+  void _syncPhonePeerMeta() {
+    final name = deviceName;
+    final ip = ipController.text.trim();
+    final port = portController.text.trim();
+    final address = ip.isNotEmpty && port.isNotEmpty ? '$ip:$port' : '未知';
+    _chatServer.sendPhonePeerMeta(name: name, address: address);
   }
 
   void _safeNotify() {

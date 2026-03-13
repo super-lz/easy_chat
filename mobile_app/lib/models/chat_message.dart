@@ -7,6 +7,10 @@ class ChatMessage extends Equatable {
     required this.id,
     required this.sender,
     required this.text,
+    this.type = 'text',
+    this.compositionId,
+    this.batchId,
+    this.batchTotal,
     this.meta,
     this.isSystem = false,
     this.bytes,
@@ -18,6 +22,10 @@ class ChatMessage extends Equatable {
   final String id;
   final String sender;
   final String text;
+  final String type;
+  final String? compositionId;
+  final String? batchId;
+  final int? batchTotal;
   final String? meta;
   final bool isSystem;
   final Uint8List? bytes;
@@ -29,6 +37,10 @@ class ChatMessage extends Equatable {
     String? id,
     String? sender,
     String? text,
+    String? type,
+    String? compositionId,
+    String? batchId,
+    int? batchTotal,
     String? meta,
     bool? isSystem,
     Uint8List? bytes,
@@ -40,6 +52,10 @@ class ChatMessage extends Equatable {
       id: id ?? this.id,
       sender: sender ?? this.sender,
       text: text ?? this.text,
+      type: type ?? this.type,
+      compositionId: compositionId ?? this.compositionId,
+      batchId: batchId ?? this.batchId,
+      batchTotal: batchTotal ?? this.batchTotal,
       meta: meta ?? this.meta,
       isSystem: isSystem ?? this.isSystem,
       bytes: bytes ?? this.bytes,
@@ -51,14 +67,18 @@ class ChatMessage extends Equatable {
 
   @override
   List<Object?> get props => [
-        id,
-        sender,
-        text,
-        meta,
-        isSystem,
-        bytes,
-        mimeType,
-        progress,
-        savedPath,
-      ];
+    id,
+    sender,
+    text,
+    type,
+    compositionId,
+    batchId,
+    batchTotal,
+    meta,
+    isSystem,
+    bytes,
+    mimeType,
+    progress,
+    savedPath,
+  ];
 }

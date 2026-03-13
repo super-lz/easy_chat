@@ -1,5 +1,153 @@
 import 'package:flutter/material.dart';
 
+class EasyChatPageScaffold extends StatelessWidget {
+  const EasyChatPageScaffold({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.fromLTRB(20, 18, 20, 24),
+    this.bottomBar,
+  });
+
+  final Widget child;
+  final EdgeInsets padding;
+  final Widget? bottomBar;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFF6F9FD), Color(0xFFEAF0F7), Color(0xFFE3E9F2)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              Expanded(
+                child: Padding(padding: padding, child: child),
+              ),
+              if (bottomBar != null) bottomBar!,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class PageHeader extends StatelessWidget {
+  const PageHeader({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.leading,
+    this.trailing,
+    this.bottomPadding = 20,
+  });
+
+  final String title;
+  final String? subtitle;
+  final Widget? leading;
+  final Widget? trailing;
+  final double bottomPadding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomPadding),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (leading != null) ...[leading!, const SizedBox(width: 12)],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (subtitle != null) ...[
+                  Text(
+                    subtitle!,
+                    style: const TextStyle(
+                      color: Color(0xFF7D8AA0),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                ],
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF1B2430),
+                    height: 1.05,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (trailing != null) ...[const SizedBox(width: 12), trailing!],
+        ],
+      ),
+    );
+  }
+}
+
+class AppBackButton extends StatelessWidget {
+  const AppBackButton({super.key, required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: onPressed,
+      icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+      style: IconButton.styleFrom(
+        minimumSize: const Size(44, 44),
+        backgroundColor: Colors.white.withValues(alpha: 0.82),
+        foregroundColor: const Color(0xFF314054),
+        side: const BorderSide(color: Color(0xFFD7E0EB)),
+      ),
+    );
+  }
+}
+
+class GlassSurface extends StatelessWidget {
+  const GlassSurface({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.all(18),
+    this.radius = 24,
+  });
+
+  final Widget child;
+  final EdgeInsets padding;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: const Color(0xFFD7E0EB)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF40506A).withValues(alpha: 0.08),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
 class SmartisanTag extends StatelessWidget {
   const SmartisanTag({super.key, required this.text});
 
@@ -8,15 +156,17 @@ class SmartisanTag extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
-        color: const Color(0x1A111111),
+        color: Colors.white.withValues(alpha: 0.72),
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFD7E0EB)),
       ),
       child: Text(
         text,
         style: const TextStyle(
-          color: Color(0xFF222222),
+          color: Color(0xFF445368),
+          fontSize: 12,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.2,
         ),
@@ -41,14 +191,11 @@ class SmartisanFeatureCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GlassSurface(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: const Color(0xFFDEDAD2)),
-      ),
+      radius: 28,
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Column(
@@ -58,30 +205,22 @@ class SmartisanFeatureCard extends StatelessWidget {
                   title,
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w700,
-                    color: const Color(0xFF1C1C1C),
+                    color: const Color(0xFF1B2430),
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
                 Text(
                   subtitle,
                   style: const TextStyle(
-                    color: Color(0xFF6C675E),
-                    height: 1.45,
+                    color: Color(0xFF68778C),
+                    height: 1.55,
                   ),
                 ),
               ],
             ),
           ),
-          FilledButton(
-            onPressed: onTap,
-            style: FilledButton.styleFrom(
-              backgroundColor: onTap == null
-                  ? const Color(0xFFCAC4B9)
-                  : const Color(0xFF1D1D1F),
-              foregroundColor: Colors.white,
-            ),
-            child: Text(actionLabel),
-          ),
+          const SizedBox(width: 16),
+          FilledButton(onPressed: onTap, child: Text(actionLabel)),
         ],
       ),
     );
@@ -96,21 +235,16 @@ class InfoTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
+    return GlassSurface(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFDEDAD2)),
-      ),
+      radius: 22,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             label,
             style: const TextStyle(
-              color: Color(0xFF7A746A),
+              color: Color(0xFF7D8AA0),
               fontSize: 12,
               fontWeight: FontWeight.w700,
             ),
@@ -120,7 +254,7 @@ class InfoTile extends StatelessWidget {
             value,
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.w700,
-              color: const Color(0xFF1D1D1F),
+              color: const Color(0xFF1C2530),
             ),
           ),
         ],
@@ -135,29 +269,35 @@ class LabeledField extends StatelessWidget {
     required this.label,
     required this.controller,
     this.readOnly = false,
+    this.hintText,
+    this.errorText,
+    this.minLines = 1,
+    this.maxLines = 1,
   });
 
   final String label;
   final TextEditingController controller;
   final bool readOnly;
+  final String? hintText;
+  final String? errorText;
+  final int minLines;
+  final int maxLines;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
       readOnly: readOnly,
+      minLines: minLines,
+      maxLines: maxLines,
+      style: const TextStyle(
+        color: Color(0xFF1C2530),
+        fontWeight: FontWeight.w500,
+      ),
       decoration: InputDecoration(
         labelText: label,
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: Color(0xFFDEDAD2)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: Color(0xFFDEDAD2)),
-        ),
+        hintText: hintText,
+        errorText: errorText,
       ),
     );
   }
@@ -175,16 +315,16 @@ class InlineStatus extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Colors.white.withValues(alpha: 0.82),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFDEDAD2)),
+        border: Border.all(color: const Color(0xFFD7E0EB)),
       ),
       child: Row(
         children: [
           Text(
             '$label：',
             style: const TextStyle(
-              color: Color(0xFF6C675E),
+              color: Color(0xFF6E7B8F),
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -192,11 +332,39 @@ class InlineStatus extends StatelessWidget {
             child: Text(
               value,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Color(0xFF1D1D1F)),
+              style: const TextStyle(
+                color: Color(0xFF1C2530),
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class BottomActionBar extends StatelessWidget {
+  const BottomActionBar({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.74),
+        border: const Border(top: BorderSide(color: Color(0xFFD7E0EB))),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF334155).withValues(alpha: 0.08),
+            blurRadius: 24,
+            offset: const Offset(0, -6),
+          ),
+        ],
+      ),
+      child: child,
     );
   }
 }

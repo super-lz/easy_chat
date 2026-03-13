@@ -42,6 +42,7 @@ export type IncomingTransfer = {
   name: string
   size: number
   mimeType: string
+  compositionId?: string
   batchId?: string
   batchTotal?: number
   chunkSize: number
@@ -53,6 +54,7 @@ export type IncomingTransfer = {
 export type OutgoingTransfer = {
   transferId: string
   file: File
+  compositionId?: string
   batchId?: string
   batchTotal?: number
   chunkSize: number
@@ -75,11 +77,24 @@ export type DirectConnectionState = {
 
 export type DirectPayload =
   | { type: 'system'; text: string }
-  | { type: 'message'; sender?: 'phone' | 'browser'; text: string }
+  | {
+      type: 'peer_meta'
+      sender?: 'phone' | 'browser'
+      role?: 'phone' | 'browser'
+      name: string
+      address: string
+    }
+  | {
+      type: 'message'
+      sender?: 'phone' | 'browser'
+      text: string
+      compositionId?: string
+    }
   | {
       type: 'file_offer'
       transferId: string
       sender?: 'phone' | 'browser'
+      compositionId?: string
       batchId?: string
       batchTotal?: number
       name: string

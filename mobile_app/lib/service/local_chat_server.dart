@@ -3,7 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-typedef DirectMessageHandler = void Function(String text);
+typedef DirectMessageHandler = void Function(DirectTextPayload message);
+typedef PeerMetaHandler = void Function(DirectPeerMetaPayload payload);
 typedef FileReceivedHandler = void Function(DirectFilePayload file);
 typedef FileProgressHandler = void Function(String transferId, double progress);
 typedef FileDeliveredHandler = void Function(String transferId);
@@ -13,6 +14,30 @@ typedef RemoteDisconnectHandler = void Function();
 const _binaryFileChunkFrame = 1;
 const _chunkPumpDelay = Duration(milliseconds: 8);
 
+class DirectTextPayload {
+  const DirectTextPayload({
+    required this.text,
+    required this.sender,
+    this.compositionId,
+  });
+
+  final String text;
+  final String sender;
+  final String? compositionId;
+}
+
+class DirectPeerMetaPayload {
+  const DirectPeerMetaPayload({
+    required this.role,
+    required this.name,
+    required this.address,
+  });
+
+  final String role;
+  final String name;
+  final String address;
+}
+
 class DirectFilePayload {
   const DirectFilePayload({
     required this.transferId,
@@ -21,6 +46,7 @@ class DirectFilePayload {
     required this.size,
     required this.bytes,
     required this.sender,
+    this.compositionId,
     this.batchId,
     this.batchTotal,
   });
@@ -31,6 +57,7 @@ class DirectFilePayload {
   final int size;
   final Uint8List bytes;
   final String sender;
+  final String? compositionId;
   final String? batchId;
   final int? batchTotal;
 }
@@ -42,6 +69,7 @@ class _IncomingFile {
     required this.mimeType,
     required this.size,
     required this.sender,
+    this.compositionId,
     this.batchId,
     this.batchTotal,
     required this.chunkSize,
@@ -53,6 +81,7 @@ class _IncomingFile {
   final String mimeType;
   final int size;
   final String sender;
+  final String? compositionId;
   final String? batchId;
   final int? batchTotal;
   final int chunkSize;
@@ -77,6 +106,7 @@ class _OutgoingFile {
     required this.name,
     required this.mimeType,
     required this.bytes,
+    this.compositionId,
     this.batchId,
     this.batchTotal,
     required this.chunkSize,
@@ -86,6 +116,7 @@ class _OutgoingFile {
   final String name;
   final String mimeType;
   final Uint8List bytes;
+  final String? compositionId;
   final String? batchId;
   final int? batchTotal;
   final int chunkSize;
@@ -97,6 +128,7 @@ class _OutgoingFile {
 class LocalChatServer {
   LocalChatServer({
     required this.onBrowserMessage,
+    required this.onPeerMeta,
     required this.onFileReceived,
     required this.onFileProgress,
     required this.onFileDelivered,
@@ -105,6 +137,7 @@ class LocalChatServer {
   });
 
   DirectMessageHandler onBrowserMessage;
+  PeerMetaHandler onPeerMeta;
   FileReceivedHandler onFileReceived;
   FileProgressHandler onFileProgress;
   FileDeliveredHandler onFileDelivered;
@@ -145,8 +178,8 @@ class LocalChatServer {
         continue;
       }
 
-    final socket = await WebSocketTransformer.upgrade(request);
-    _socket = socket;
+      final socket = await WebSocketTransformer.upgrade(request);
+      _socket = socket;
       onStatusChanged('Browser connected directly');
       socket.add(
         jsonEncode({'type': 'system', 'text': 'Direct socket connected'}),
@@ -169,7 +202,27 @@ class LocalChatServer {
               case 'message':
                 final text = payload['text']?.toString().trim() ?? '';
                 if (text.isNotEmpty) {
-                  onBrowserMessage(text);
+                  onBrowserMessage(
+                    DirectTextPayload(
+                      text: text,
+                      sender: payload['sender']?.toString() ?? 'browser',
+                      compositionId: payload['compositionId']?.toString(),
+                    ),
+                  );
+                }
+                break;
+              case 'peer_meta':
+                final role = payload['role']?.toString().trim() ?? '';
+                final name = payload['name']?.toString().trim() ?? '';
+                final address = payload['address']?.toString().trim() ?? '';
+                if (role.isNotEmpty && name.isNotEmpty && address.isNotEmpty) {
+                  onPeerMeta(
+                    DirectPeerMetaPayload(
+                      role: role,
+                      name: name,
+                      address: address,
+                    ),
+                  );
                 }
                 break;
               case 'file_offer':
@@ -249,6 +302,7 @@ class LocalChatServer {
         mimeType: mimeType,
         size: size,
         sender: payload['sender']?.toString() ?? 'browser',
+        compositionId: payload['compositionId']?.toString(),
         batchId: payload['batchId']?.toString(),
         batchTotal: payload['batchTotal'] is int
             ? payload['batchTotal'] as int
@@ -324,7 +378,9 @@ class LocalChatServer {
 
     incoming.chunks[chunkIndex] = decodedChunk;
     incoming.receivedBytes += decodedChunk.length;
-    final progress = incoming.size == 0 ? 0 : incoming.receivedBytes / incoming.size;
+    final progress = incoming.size == 0
+        ? 0
+        : incoming.receivedBytes / incoming.size;
     onFileProgress(transferId, progress.clamp(0, 1).toDouble());
   }
 
@@ -369,6 +425,7 @@ class LocalChatServer {
         size: incoming.size,
         bytes: merged.takeBytes(),
         sender: incoming.sender,
+        compositionId: incoming.compositionId,
         batchId: incoming.batchId,
         batchTotal: incoming.batchTotal,
       ),
@@ -406,6 +463,7 @@ class LocalChatServer {
         'type': 'file_offer',
         'transferId': outgoing.transferId,
         'sender': 'phone',
+        'compositionId': outgoing.compositionId,
         'batchId': outgoing.batchId,
         'batchTotal': outgoing.batchTotal,
         'name': outgoing.name,
@@ -468,13 +526,17 @@ class LocalChatServer {
           ? outgoing.bytes.length
           : start + outgoing.chunkSize;
       final chunk = outgoing.bytes.sublist(start, end);
-      socket.add(_encodeBinaryChunkFrame(outgoing.transferId, chunkIndex, chunk));
+      socket.add(
+        _encodeBinaryChunkFrame(outgoing.transferId, chunkIndex, chunk),
+      );
       outgoing.nextChunk = chunkIndex + 1;
       onFileProgress(
         transferId,
         outgoing.totalChunks == 0
             ? 0
-            : (outgoing.nextChunk / outgoing.totalChunks).clamp(0, 1).toDouble(),
+            : (outgoing.nextChunk / outgoing.totalChunks)
+                  .clamp(0, 1)
+                  .toDouble(),
       );
     }
 
@@ -517,18 +579,42 @@ class LocalChatServer {
 
     incoming.chunks[payload.chunkIndex] = payload.chunk;
     incoming.receivedBytes += payload.chunk.length;
-    final progress = incoming.size == 0 ? 0 : incoming.receivedBytes / incoming.size;
+    final progress = incoming.size == 0
+        ? 0
+        : incoming.receivedBytes / incoming.size;
     onFileProgress(payload.transferId, progress.clamp(0, 1).toDouble());
   }
 
-  void sendPhoneMessage(String text) {
+  void sendPhoneMessage(String text, {String? compositionId}) {
     final socket = _socket;
     if (socket == null) {
       return;
     }
 
     socket.add(
-      jsonEncode({'type': 'message', 'sender': 'phone', 'text': text}),
+      jsonEncode({
+        'type': 'message',
+        'sender': 'phone',
+        'text': text,
+        'compositionId': compositionId,
+      }),
+    );
+  }
+
+  void sendPhonePeerMeta({required String name, required String address}) {
+    final socket = _socket;
+    if (socket == null) {
+      return;
+    }
+
+    socket.add(
+      jsonEncode({
+        'type': 'peer_meta',
+        'sender': 'phone',
+        'role': 'phone',
+        'name': name,
+        'address': address,
+      }),
     );
   }
 
@@ -546,6 +632,7 @@ class LocalChatServer {
     required String name,
     required String mimeType,
     required Uint8List bytes,
+    String? compositionId,
     String? batchId,
     int? batchTotal,
   }) {
@@ -555,6 +642,7 @@ class LocalChatServer {
       name: name,
       mimeType: mimeType,
       bytes: bytes,
+      compositionId: compositionId,
       batchId: batchId,
       batchTotal: batchTotal,
       chunkSize: chunkSize,

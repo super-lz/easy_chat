@@ -228,20 +228,6 @@ export const MessageList = memo(function MessageList({
     }
   }
 
-  const resetCopiedBubble = (bubbleId?: string) => {
-    if (copyResetTimerRef.current !== null) {
-      window.clearTimeout(copyResetTimerRef.current)
-      copyResetTimerRef.current = null
-    }
-
-    setCopiedBubbleId((current) => {
-      if (!bubbleId || current === bubbleId) {
-        return null
-      }
-      return current
-    })
-  }
-
   const handleBubbleMouseEnter = (bubbleId: string) => {
     setCopiedBubbleId((current) => (current === bubbleId ? null : current))
   }

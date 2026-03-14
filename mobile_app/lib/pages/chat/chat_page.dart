@@ -18,15 +18,40 @@ class ChatPage extends StatefulWidget {
   State<ChatPage> createState() => _ChatPageState();
 }
 
-class _ChatPageState extends State<ChatPage> {
+class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   bool _isHeaderExpanded = false;
   final FocusNode _composerFocusNode = FocusNode();
   _ComposerPanelType _composerPanelType = _ComposerPanelType.none;
-  Timer? _composerPanelTimer;
+  double _lastKeyboardHeight = 290;
+  double _keyboardOpeningHeight = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    final keyboardInset = _keyboardInset;
+    if (keyboardInset > 0) {
+      _lastKeyboardHeight = keyboardInset;
+      if (_keyboardOpeningHeight != 0) {
+        setState(() {
+          _keyboardOpeningHeight = 0;
+        });
+      }
+    } else if (_keyboardOpeningHeight != 0 && !_composerFocusNode.hasFocus) {
+      setState(() {
+        _keyboardOpeningHeight = 0;
+      });
+    }
+  }
 
   @override
   void dispose() {
-    _composerPanelTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _composerFocusNode.dispose();
     super.dispose();
   }
@@ -34,6 +59,7 @@ class _ChatPageState extends State<ChatPage> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<ChatSessionPProvider>();
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
 
     if (!provider.hasCachedConnection) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -49,6 +75,7 @@ class _ChatPageState extends State<ChatPage> {
     final phoneAddress = _buildPhoneAddress(provider);
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       body: DecoratedBox(
         decoration: BoxDecoration(
           color: const Color(0xFFE9EEF5),
@@ -65,114 +92,109 @@ class _ChatPageState extends State<ChatPage> {
             ),
           ],
         ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              ChatHeaderSection(
-                deviceName: provider.deviceName,
-                serverStatus: provider.serverStatus,
-                isExpanded: _isHeaderExpanded,
-                onToggleExpanded: () {
-                  setState(() {
-                    _isHeaderExpanded = !_isHeaderExpanded;
-                  });
-                },
-              ),
-              Expanded(
-                child: Stack(
-                  children: [
-                    GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: _dismissComposerPanelsAndKeyboard,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Colors.white.withValues(alpha: 0.12),
-                              Colors.white.withValues(alpha: 0.02),
-                            ],
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                          ),
-                        ),
-                        child: Column(
-                          children: [
-                            Expanded(
-                              child: ListView.separated(
-                                reverse: true,
-                                padding: const EdgeInsets.fromLTRB(
-                                  14,
-                                  20,
-                                  14,
-                                  16,
-                                ),
-                                itemBuilder: (context, index) {
-                                  return ChatMessageTile(
-                                    item: renderItems[index],
-                                  );
-                                },
-                                separatorBuilder: (_, _) =>
-                                    const SizedBox(height: 10),
-                                itemCount: renderItems.length,
-                              ),
-                            ),
-                            _ChatComposer(
-                              provider: provider,
-                              focusNode: _composerFocusNode,
-                              panelType: _composerPanelType,
-                              onToggleAttachments: () => _toggleComposerPanel(
-                                _ComposerPanelType.attachments,
-                              ),
-                              onToggleEmojis: () => _toggleComposerPanel(
-                                _ComposerPanelType.emojis,
-                              ),
-                              onClosePanels: _closeComposerPanelsOnly,
-                              onRequestKeyboard: _focusComposerInput,
-                            ),
+        child: Column(
+          children: [
+            ChatHeaderSection(
+              deviceName: provider.deviceName,
+              serverStatus: provider.serverStatus,
+              isExpanded: _isHeaderExpanded,
+              onToggleExpanded: () {
+                setState(() {
+                  _isHeaderExpanded = !_isHeaderExpanded;
+                });
+              },
+            ),
+            Expanded(
+              child: Stack(
+                children: [
+                  GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTap: _dismissComposerPanelsAndKeyboard,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.white.withValues(alpha: 0.12),
+                            Colors.white.withValues(alpha: 0.02),
                           ],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Expanded(
+                            child: ListView.separated(
+                              reverse: true,
+                              padding: const EdgeInsets.fromLTRB(
+                                14,
+                                20,
+                                14,
+                                16,
+                              ),
+                              itemBuilder: (context, index) {
+                                return ChatMessageTile(
+                                  item: renderItems[index],
+                                );
+                              },
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: 10),
+                              itemCount: renderItems.length,
+                            ),
+                          ),
+                          _ChatComposer(
+                            provider: provider,
+                            focusNode: _composerFocusNode,
+                            panelType: _composerPanelType,
+                            keyboardHeight: keyboardInset,
+                            keyboardOpeningHeight: _keyboardOpeningHeight,
+                            preferredKeyboardHeight: _preferredPanelHeight,
+                            onToggleAttachments: () => _toggleComposerPanel(
+                              _ComposerPanelType.attachments,
+                            ),
+                            onToggleEmojis: () =>
+                                _toggleComposerPanel(_ComposerPanelType.emojis),
+                            onClosePanels: _closeComposerPanelsOnly,
+                            onRequestKeyboard: _focusComposerInput,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (_isHeaderExpanded)
+                    Positioned.fill(
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _isHeaderExpanded = false;
+                          });
+                        },
+                        child: ColoredBox(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            child: GestureDetector(
+                              onTap: () {},
+                              child: Container(
+                                margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                                child: ChatHeaderOverlayPanel(
+                                  deviceName: provider.deviceName,
+                                  browserName: provider.browserPeerName,
+                                  phoneAddress: phoneAddress,
+                                  browserAddress: provider.browserPeerAddress,
+                                  serverStatus: provider.serverStatus,
+                                  onDisconnect: () => _disconnect(context),
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                    if (_isHeaderExpanded)
-                      Positioned.fill(
-                        child: GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _isHeaderExpanded = false;
-                            });
-                          },
-                          child: ColoredBox(
-                            color: Colors.black.withValues(alpha: 0.08),
-                            child: Align(
-                              alignment: Alignment.topCenter,
-                              child: GestureDetector(
-                                onTap: () {},
-                                child: Container(
-                                  margin: const EdgeInsets.fromLTRB(
-                                    12,
-                                    8,
-                                    12,
-                                    0,
-                                  ),
-                                  child: ChatHeaderOverlayPanel(
-                                    deviceName: provider.deviceName,
-                                    browserName: provider.browserPeerName,
-                                    phoneAddress: phoneAddress,
-                                    browserAddress: provider.browserPeerAddress,
-                                    serverStatus: provider.serverStatus,
-                                    onDisconnect: () => _disconnect(context),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -197,40 +219,29 @@ class _ChatPageState extends State<ChatPage> {
     final nextType = _composerPanelType == type
         ? _ComposerPanelType.none
         : type;
-    _composerPanelTimer?.cancel();
 
-    final keyboardVisible =
-        MediaQuery.viewInsetsOf(context).bottom > 0 ||
-        _composerFocusNode.hasFocus;
-    FocusScope.of(context).unfocus();
+    if (_composerPanelType != nextType) {
+      setState(() {
+        _composerPanelType = nextType;
+      });
+    }
 
     if (nextType == _ComposerPanelType.none) {
-      _closeComposerPanelsOnly();
-      return;
-    }
-
-    if (keyboardVisible) {
-      if (_composerPanelType != _ComposerPanelType.none) {
+      if (_keyboardOpeningHeight != 0) {
         setState(() {
-          _composerPanelType = _ComposerPanelType.none;
+          _keyboardOpeningHeight = 0;
         });
       }
-      _composerPanelTimer = Timer(const Duration(milliseconds: 180), () {
-        if (!mounted) return;
-        setState(() {
-          _composerPanelType = nextType;
-        });
-      });
+      FocusScope.of(context).unfocus();
       return;
     }
 
-    setState(() {
-      _composerPanelType = nextType;
-    });
+    if (_isKeyboardVisible || _composerFocusNode.hasFocus) {
+      FocusScope.of(context).unfocus();
+    }
   }
 
   void _closeComposerPanelsOnly() {
-    _composerPanelTimer?.cancel();
     if (_composerPanelType == _ComposerPanelType.none) return;
     setState(() {
       _composerPanelType = _ComposerPanelType.none;
@@ -239,25 +250,59 @@ class _ChatPageState extends State<ChatPage> {
 
   void _dismissComposerPanelsAndKeyboard() {
     FocusScope.of(context).unfocus();
+    if (_keyboardOpeningHeight != 0) {
+      setState(() {
+        _keyboardOpeningHeight = 0;
+      });
+    }
     _closeComposerPanelsOnly();
   }
 
   void _focusComposerInput() {
-    _composerPanelTimer?.cancel();
-    _closeComposerPanelsOnly();
+    if (_composerPanelType != _ComposerPanelType.none) {
+      setState(() {
+        _composerPanelType = _ComposerPanelType.none;
+      });
+    }
     if (!_composerFocusNode.hasFocus) {
+      setState(() {
+        _keyboardOpeningHeight = _preferredPanelHeight;
+      });
       _composerFocusNode.requestFocus();
     }
+  }
+
+  bool get _isKeyboardVisible {
+    return _keyboardInset > 0;
+  }
+
+  double get _keyboardInset {
+    final view = View.maybeOf(context);
+    if (view != null) {
+      return MediaQueryData.fromView(view).viewInsets.bottom;
+    }
+    final views = WidgetsBinding.instance.platformDispatcher.views;
+    if (views.isEmpty) {
+      return 0;
+    }
+    return MediaQueryData.fromView(views.first).viewInsets.bottom;
+  }
+
+  double get _preferredPanelHeight {
+    return _lastKeyboardHeight.clamp(260.0, 360.0);
   }
 }
 
 enum _ComposerPanelType { none, attachments, emojis }
 
-class _ChatComposer extends StatelessWidget {
+class _ChatComposer extends StatefulWidget {
   const _ChatComposer({
     required this.provider,
     required this.focusNode,
     required this.panelType,
+    required this.keyboardHeight,
+    required this.keyboardOpeningHeight,
+    required this.preferredKeyboardHeight,
     required this.onToggleAttachments,
     required this.onToggleEmojis,
     required this.onClosePanels,
@@ -267,37 +312,44 @@ class _ChatComposer extends StatelessWidget {
   final ChatSessionPProvider provider;
   final FocusNode focusNode;
   final _ComposerPanelType panelType;
+  final double keyboardHeight;
+  final double keyboardOpeningHeight;
+  final double preferredKeyboardHeight;
   final VoidCallback onToggleAttachments;
   final VoidCallback onToggleEmojis;
   final VoidCallback onClosePanels;
   final VoidCallback onRequestKeyboard;
 
   @override
-  Widget build(BuildContext context) {
-    final hasAttachmentPanel = panelType == _ComposerPanelType.attachments;
-    final hasEmojiPanel = panelType == _ComposerPanelType.emojis;
-    final panelChild = switch (panelType) {
-      _ComposerPanelType.attachments => _ComposerAttachmentPanel(
-        key: const ValueKey('attachments'),
-        onCameraTap: () {
-          onClosePanels();
-          unawaited(provider.capturePendingImage());
-        },
-        onGalleryTap: () {
-          onClosePanels();
-          unawaited(provider.pickPendingImagesFromGallery());
-        },
-        onFileTap: () {
-          onClosePanels();
-          unawaited(provider.pickPendingFiles());
-        },
-      ),
-      _ComposerPanelType.emojis => _ComposerEmojiPanel(
-        key: const ValueKey('emojis'),
-        onEmojiTap: (emoji) => _insertEmoji(provider.messageController, emoji),
-      ),
-      _ComposerPanelType.none => const SizedBox.shrink(key: ValueKey('empty')),
+  State<_ChatComposer> createState() => _ChatComposerState();
+}
+
+class _ChatComposerState extends State<_ChatComposer> {
+  static const Duration panelAnimationDuration = Duration(milliseconds: 240);
+  static const Duration _panelSwitchDuration = Duration(milliseconds: 180);
+
+  double _panelHeightFor(_ComposerPanelType type) {
+    return switch (type) {
+      _ComposerPanelType.attachments => widget.preferredKeyboardHeight,
+      _ComposerPanelType.emojis => widget.preferredKeyboardHeight,
+      _ComposerPanelType.none => 0.0,
     };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasAttachmentPanel =
+        widget.panelType == _ComposerPanelType.attachments;
+    final hasEmojiPanel = widget.panelType == _ComposerPanelType.emojis;
+    final panelHeight = _panelHeightFor(widget.panelType);
+    final isPanelVisible = widget.panelType != _ComposerPanelType.none;
+    final targetPanelRevealHeight = isPanelVisible ? panelHeight : 0.0;
+    final keyboardTargetHeight = widget.keyboardHeight > 0
+        ? widget.keyboardHeight
+        : widget.keyboardOpeningHeight;
+    final targetOccupiedHeight = isPanelVisible
+        ? widget.preferredKeyboardHeight
+        : keyboardTargetHeight;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
@@ -312,70 +364,160 @@ class _ChatComposer extends StatelessWidget {
           ),
         ],
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (provider.pendingAttachments.isNotEmpty) ...[
-            _PendingAttachmentsRow(provider: provider),
-            const SizedBox(height: 8),
-          ],
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: _ComposerInputShell(
-                  controller: provider.messageController,
-                  focusNode: focusNode,
-                  hasEmojiPanel: hasEmojiPanel,
-                  hasAttachmentPanel: hasAttachmentPanel,
-                  hasPendingAttachments: provider.pendingAttachments.isNotEmpty,
-                  onTapInput: onRequestKeyboard,
-                  onTapEmoji: onToggleEmojis,
-                  onTapAttachment: onToggleAttachments,
-                ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: provider.canSend
-                    ? () => unawaited(provider.sendDraft())
-                    : null,
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(50, 50),
-                  padding: EdgeInsets.zero,
-                  backgroundColor: const Color(0xFF111827),
-                  disabledBackgroundColor: const Color(0xFFD3DBE6),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(25),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(end: targetOccupiedHeight),
+        duration: panelAnimationDuration,
+        curve: Curves.easeOutCubic,
+        child: _ComposerPanelHost(
+          panelType: widget.panelType,
+          panelHeight: panelHeight,
+          onEmojiTap: (emoji) =>
+              _insertEmoji(widget.provider.messageController, emoji),
+          onCameraTap: () {
+            widget.onClosePanels();
+            unawaited(widget.provider.capturePendingImage());
+          },
+          onGalleryTap: () {
+            widget.onClosePanels();
+            unawaited(widget.provider.pickPendingImagesFromGallery());
+          },
+          onFileTap: () {
+            widget.onClosePanels();
+            unawaited(widget.provider.pickPendingFiles());
+          },
+        ),
+        builder: (context, occupiedHeight, panelChild) {
+          return TweenAnimationBuilder<double>(
+            tween: Tween<double>(end: targetPanelRevealHeight),
+            duration: panelAnimationDuration,
+            curve: Curves.easeOutCubic,
+            builder: (context, panelRevealHeight, _) {
+              final revealProgress = panelHeight <= 0
+                  ? 0.0
+                  : (panelRevealHeight / panelHeight).clamp(0.0, 1.0);
+              final hiddenOffset = panelHeight * (1 - revealProgress);
+
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (widget.provider.pendingAttachments.isNotEmpty) ...[
+                    _PendingAttachmentsRow(provider: widget.provider),
+                    const SizedBox(height: 8),
+                  ],
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: _ComposerInputShell(
+                          controller: widget.provider.messageController,
+                          focusNode: widget.focusNode,
+                          hasEmojiPanel: hasEmojiPanel,
+                          hasAttachmentPanel: hasAttachmentPanel,
+                          hasPendingAttachments:
+                              widget.provider.pendingAttachments.isNotEmpty,
+                          onTapInput: widget.onRequestKeyboard,
+                          onTapEmoji: widget.onToggleEmojis,
+                          onTapAttachment: widget.onToggleAttachments,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        onPressed: widget.provider.canSend
+                            ? () => unawaited(widget.provider.sendDraft())
+                            : null,
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(50, 50),
+                          padding: EdgeInsets.zero,
+                          backgroundColor: const Color(0xFF111827),
+                          disabledBackgroundColor: const Color(0xFFD3DBE6),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(25),
+                          ),
+                        ),
+                        child: const Icon(Icons.arrow_upward_rounded),
+                      ),
+                    ],
                   ),
-                ),
-                child: const Icon(Icons.arrow_upward_rounded),
-              ),
-            ],
-          ),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeInCubic,
-            transitionBuilder: (child, animation) {
-              return FadeTransition(
-                opacity: animation,
-                child: SizeTransition(
-                  sizeFactor: animation,
-                  axisAlignment: -1,
-                  child: child,
-                ),
+                  SizedBox(
+                    height: occupiedHeight,
+                    child: ClipRect(
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: -hiddenOffset,
+                            height: panelHeight,
+                            child: AnimatedOpacity(
+                              duration: _panelSwitchDuration,
+                              curve: Curves.easeOutCubic,
+                              opacity: revealProgress,
+                              child: IgnorePointer(
+                                ignoring: !isPanelVisible,
+                                child: panelChild,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               );
             },
-            child: panelType == _ComposerPanelType.none
-                ? panelChild
-                : Padding(
-                    key: ValueKey(panelType),
-                    padding: const EdgeInsets.only(top: 10),
-                    child: panelChild,
-                  ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ComposerPanelHost extends StatelessWidget {
+  const _ComposerPanelHost({
+    required this.panelType,
+    required this.panelHeight,
+    required this.onEmojiTap,
+    required this.onCameraTap,
+    required this.onGalleryTap,
+    required this.onFileTap,
+  });
+
+  final _ComposerPanelType panelType;
+  final double panelHeight;
+  final ValueChanged<String> onEmojiTap;
+  final VoidCallback onCameraTap;
+  final VoidCallback onGalleryTap;
+  final VoidCallback onFileTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: panelHeight,
+      child: AnimatedSwitcher(
+        duration: _ChatComposerState._panelSwitchDuration,
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeOutCubic,
+        transitionBuilder: (child, animation) =>
+            FadeTransition(opacity: animation, child: child),
+        child: switch (panelType) {
+          _ComposerPanelType.attachments => _ComposerAttachmentPanel(
+            key: const ValueKey('attachments-panel'),
+            height: panelHeight,
+            onCameraTap: onCameraTap,
+            onGalleryTap: onGalleryTap,
+            onFileTap: onFileTap,
           ),
-        ],
+          _ComposerPanelType.emojis => _ComposerEmojiPanel(
+            key: const ValueKey('emoji-panel'),
+            height: panelHeight,
+            onEmojiTap: onEmojiTap,
+          ),
+          _ComposerPanelType.none => const SizedBox.shrink(
+            key: ValueKey('empty-panel'),
+          ),
+        },
       ),
     );
   }
@@ -495,11 +637,13 @@ class _ComposerTrailingButton extends StatelessWidget {
 class _ComposerAttachmentPanel extends StatelessWidget {
   const _ComposerAttachmentPanel({
     super.key,
+    required this.height,
     required this.onCameraTap,
     required this.onGalleryTap,
     required this.onFileTap,
   });
 
+  final double height;
   final VoidCallback onCameraTap;
   final VoidCallback onGalleryTap;
   final VoidCallback onFileTap;
@@ -507,36 +651,45 @@ class _ComposerAttachmentPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(6, 8, 6, 4),
+      height: height,
+      padding: const EdgeInsets.fromLTRB(8, 14, 8, 18),
       decoration: BoxDecoration(
         color: const Color(0xFFF7F9FC),
         borderRadius: BorderRadius.circular(24),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: _ComposerActionButton(
-              icon: Icons.camera_alt_rounded,
-              label: '拍摄',
-              onTap: onCameraTap,
-            ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _ComposerActionButton(
+                  icon: Icons.camera_alt_rounded,
+                  label: '拍摄',
+                  onTap: onCameraTap,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ComposerActionButton(
+                  icon: Icons.photo_library_rounded,
+                  label: '相册',
+                  onTap: onGalleryTap,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ComposerActionButton(
+                  icon: Icons.insert_drive_file_rounded,
+                  label: '文件',
+                  onTap: onFileTap,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _ComposerActionButton(
-              icon: Icons.photo_library_rounded,
-              label: '相册',
-              onTap: onGalleryTap,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _ComposerActionButton(
-              icon: Icons.insert_drive_file_rounded,
-              label: '文件',
-              onTap: onFileTap,
-            ),
-          ),
+          const Spacer(),
+          const SizedBox(height: 24),
         ],
       ),
     );
@@ -544,52 +697,59 @@ class _ComposerAttachmentPanel extends StatelessWidget {
 }
 
 class _ComposerEmojiPanel extends StatelessWidget {
-  const _ComposerEmojiPanel({super.key, required this.onEmojiTap});
+  const _ComposerEmojiPanel({
+    super.key,
+    required this.height,
+    required this.onEmojiTap,
+  });
 
+  final double height;
   final ValueChanged<String> onEmojiTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(maxHeight: 280),
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: const Color(0xFFF7F9FC),
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: EmojiPicker(
-        onEmojiSelected: (_, emoji) => onEmojiTap(emoji.emoji),
-        onBackspacePressed: () {},
-        textEditingController: null,
-        config: Config(
-          height: 280,
-          checkPlatformCompatibility: false,
-          emojiViewConfig: EmojiViewConfig(
-            emojiSizeMax: 26,
-            columns: 8,
-            verticalSpacing: 4,
-            horizontalSpacing: 4,
-            gridPadding: EdgeInsets.fromLTRB(10, 10, 10, 8),
-            noRecents: const Text(
-              '暂无最近表情',
-              style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+    return SizedBox(
+      height: height,
+      child: Container(
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF7F9FC),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: EmojiPicker(
+          onEmojiSelected: (_, emoji) => onEmojiTap(emoji.emoji),
+          onBackspacePressed: () {},
+          textEditingController: null,
+          config: Config(
+            height: height,
+            checkPlatformCompatibility: false,
+            emojiViewConfig: EmojiViewConfig(
+              emojiSizeMax: 26,
+              columns: 8,
+              verticalSpacing: 4,
+              horizontalSpacing: 4,
+              gridPadding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+              noRecents: const Text(
+                '暂无最近表情',
+                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+              ),
             ),
-          ),
-          skinToneConfig: const SkinToneConfig(enabled: false),
-          categoryViewConfig: const CategoryViewConfig(
-            initCategory: Category.SMILEYS,
-            backgroundColor: Color(0xFFF7F9FC),
-            iconColor: Color(0xFF94A3B8),
-            iconColorSelected: Color(0xFF111827),
-            indicatorColor: Color(0xFF111827),
-            dividerColor: Colors.transparent,
-          ),
-          bottomActionBarConfig: const BottomActionBarConfig(enabled: false),
-          searchViewConfig: SearchViewConfig(
-            backgroundColor: const Color(0xFFF7F9FC),
-            buttonIconColor: const Color(0xFF94A3B8),
-            hintText: '搜索表情',
-            hintTextStyle: const TextStyle(color: Color(0xFF94A3B8)),
+            skinToneConfig: const SkinToneConfig(enabled: false),
+            categoryViewConfig: const CategoryViewConfig(
+              initCategory: Category.SMILEYS,
+              backgroundColor: Color(0xFFF7F9FC),
+              iconColor: Color(0xFF94A3B8),
+              iconColorSelected: Color(0xFF111827),
+              indicatorColor: Color(0xFF111827),
+              dividerColor: Colors.transparent,
+            ),
+            bottomActionBarConfig: const BottomActionBarConfig(enabled: false),
+            searchViewConfig: SearchViewConfig(
+              backgroundColor: const Color(0xFFF7F9FC),
+              buttonIconColor: const Color(0xFF94A3B8),
+              hintText: '搜索表情',
+              hintTextStyle: const TextStyle(color: Color(0xFF94A3B8)),
+            ),
           ),
         ),
       ),
@@ -614,7 +774,7 @@ class _ComposerActionButton extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
       child: Container(
-        height: 78,
+        height: 96,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(22),
@@ -622,13 +782,13 @@ class _ComposerActionButton extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 23, color: const Color(0xFF475467)),
-            const SizedBox(height: 6),
+            Icon(icon, size: 24, color: const Color(0xFF475467)),
+            const SizedBox(height: 8),
             Text(
               label,
               style: const TextStyle(
                 color: Color(0xFF475467),
-                fontSize: 12,
+                fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
             ),

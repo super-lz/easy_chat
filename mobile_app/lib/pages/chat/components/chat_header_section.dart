@@ -17,53 +17,60 @@ class ChatHeaderSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = _statusPresentation(serverStatus);
-    return Container(
-      height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.66),
+        color: Colors.white,
         border: const Border(bottom: BorderSide(color: Color(0xFFD7E0EB))),
       ),
-      child: Row(
-        children: [
-          Expanded(
+      child: Padding(
+        padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
+        child: SizedBox(
+          height: 64,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
             child: Row(
               children: [
-                Flexible(
-                  child: Text(
-                    deviceName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF1C2530),
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.3,
-                    ),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          deviceName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF1C2530),
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      _StatusTag(presentation: status),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 10),
-                _StatusTag(presentation: status),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: onToggleExpanded,
+                  icon: AnimatedRotation(
+                    duration: const Duration(milliseconds: 160),
+                    turns: isExpanded ? 0.5 : 0,
+                    child: const Icon(Icons.keyboard_arrow_down_rounded),
+                  ),
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(42, 42),
+                    backgroundColor: Colors.white.withValues(alpha: 0.82),
+                    foregroundColor: const Color(0xFF344459),
+                    side: const BorderSide(color: Color(0xFFD7E0EB)),
+                  ),
+                  tooltip: isExpanded ? '收起详情' : '展开详情',
+                ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          IconButton(
-            onPressed: onToggleExpanded,
-            icon: AnimatedRotation(
-              duration: const Duration(milliseconds: 160),
-              turns: isExpanded ? 0.5 : 0,
-              child: const Icon(Icons.keyboard_arrow_down_rounded),
-            ),
-            style: IconButton.styleFrom(
-              minimumSize: const Size(42, 42),
-              backgroundColor: Colors.white.withValues(alpha: 0.82),
-              foregroundColor: const Color(0xFF344459),
-              side: const BorderSide(color: Color(0xFFD7E0EB)),
-            ),
-            tooltip: isExpanded ? '收起详情' : '展开详情',
-          ),
-        ],
+        ),
       ),
     );
   }

@@ -1,7 +1,7 @@
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 
-enum ChatComposerPanelType { none, keyboard, attachments, emojis }
+enum ChatComposerPanelType { none, attachments, emojis }
 
 class ChatComposerPanelHost extends StatelessWidget {
   const ChatComposerPanelHost({
@@ -27,12 +27,9 @@ class ChatComposerPanelHost extends StatelessWidget {
         onGalleryTap: onGalleryTap,
         onFileTap: onFileTap,
       ),
-      ChatComposerPanelType.emojis => _ComposerEmojiPanel(
-        height: 300,
-        onEmojiTap: onEmojiTap,
-      ),
+      ChatComposerPanelType.emojis =>
+        SizedBox() ?? _ComposerEmojiPanel(height: 300, onEmojiTap: onEmojiTap),
       ChatComposerPanelType.none => const SizedBox.shrink(),
-      ChatComposerPanelType.keyboard => SizedBox.shrink(),
     };
   }
 }

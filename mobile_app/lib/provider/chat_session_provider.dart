@@ -18,8 +18,8 @@ import '../service/local_chat_server.dart';
 import '../service/pairing_api_service.dart';
 import '../utils/network_tools.dart';
 
-class ChatSessionPProvider extends ChangeNotifier {
-  ChatSessionPProvider({
+class ChatSessionProvider extends ChangeNotifier {
+  ChatSessionProvider({
     ConnectionPersistence? persistence,
     LocalChatServer? chatServer,
     PairingApiService? pairingApiService,

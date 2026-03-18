@@ -2,8 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-
-import '../../../provider/chat_session_pprovider.dart';
+import '../../../provider/chat_session_provider.dart';
 import 'chat_composer_input.dart';
 import 'chat_composer_panels.dart';
 import 'chat_composer_pending_attachments.dart';
@@ -11,7 +10,7 @@ import 'chat_composer_pending_attachments.dart';
 class ChatComposer extends StatefulWidget {
   const ChatComposer({super.key, required this.provider});
 
-  final ChatSessionPProvider provider;
+  final ChatSessionProvider provider;
 
   @override
   State<ChatComposer> createState() => _ChatComposerState();
@@ -20,18 +19,17 @@ class ChatComposer extends StatefulWidget {
 class _ChatComposerState extends State<ChatComposer>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   static const double panelMaxHeight = 400;
+
+  double get _paddingBottom => MediaQuery.of(context).padding.bottom;
+
   final FocusNode _focusNode = FocusNode();
-  static const double nullVal = -1;
-  double _bottomInsetMaxHeight = nullVal;
-  double _aimHeight = nullVal;
+
+  double _currentHeight = 0;
 
   ChatComposerPanelType _panelType = ChatComposerPanelType.none;
 
   late AnimationController _controller;
   late Animation<double> _heightAnimation;
-  double _currentHeight = 0;
-
-  double get _paddingBottom => MediaQuery.of(context).viewPadding.bottom;
 
   @override
   void initState() {
@@ -44,13 +42,6 @@ class _ChatComposerState extends State<ChatComposer>
       vsync: this,
       duration: const Duration(milliseconds: 200),
     );
-    // _controller.addListener(() {
-    //   if (_controller.isCompleted) {
-    //     if (_aimHeight != nullVal) {
-    //       _aimHeight = nullVal;
-    //     }
-    //   }
-    // });
 
     _heightAnimation = AlwaysStoppedAnimation(0);
   }
@@ -60,13 +51,8 @@ class _ChatComposerState extends State<ChatComposer>
     super.didChangeMetrics();
     final view = PlatformDispatcher.instance.views.first;
     final bottom = view.viewInsets.bottom / view.devicePixelRatio;
-    if (bottom > _bottomInsetMaxHeight) {
-      _bottomInsetMaxHeight = bottom;
-    }
-    print('xxxx $_aimHeight $_panelType');
-    if (_aimHeight == nullVal && _panelType == ChatComposerPanelType.none) {
-      _updateHeight(bottom, isAim: false);
-    }
+
+    _updateHeight(bottom);
   }
 
   @override
@@ -79,12 +65,9 @@ class _ChatComposerState extends State<ChatComposer>
 
   void _onFocusChanged() {}
 
-  void _updateHeight(double targetHeight, {bool isAim = true}) {
+  void _updateHeight(double targetHeight) {
     _controller.stop();
     final double target = targetHeight < 0 ? 0 : targetHeight;
-    if (isAim) {
-      _aimHeight = target;
-    }
 
     _heightAnimation = Tween<double>(
       begin: _currentHeight,
@@ -106,43 +89,23 @@ class _ChatComposerState extends State<ChatComposer>
     });
   }
 
-  void _handleKeyboardTap() async {
-    final panelType = _panelType;
-    _setPanelType(ChatComposerPanelType.none);
-    if (panelType != ChatComposerPanelType.none &&
-        _bottomInsetMaxHeight != nullVal) {
-      _updateHeight(_bottomInsetMaxHeight);
-    }
-    if (panelType == ChatComposerPanelType.none) {
-      _aimHeight = nullVal;
-    }
-  }
+  void _handleKeyboardTap() async {}
 
   void _handleEmojiTap() {
-    if (_panelType == ChatComposerPanelType.emojis) {
-      _setPanelType(ChatComposerPanelType.none);
-      if (_bottomInsetMaxHeight != nullVal) {
-        _updateHeight(_bottomInsetMaxHeight);
-      }
-      _focusNode.requestFocus();
-    } else {
-      _setPanelType(ChatComposerPanelType.emojis);
-      _updateHeight(panelMaxHeight);
-      if (_focusNode.hasFocus) {
-        _focusNode.unfocus();
-      }
-    }
+    _togglePanel(ChatComposerPanelType.emojis);
   }
 
   void _handleAttachmentTap() {
-    if (_panelType == ChatComposerPanelType.attachments) {
-      _setPanelType(ChatComposerPanelType.none);
-      if (_bottomInsetMaxHeight != nullVal) {
-        _updateHeight(_bottomInsetMaxHeight);
-      }
+    _togglePanel(ChatComposerPanelType.attachments);
+  }
+
+  void _togglePanel(ChatComposerPanelType panelType) {
+    final isSamePanel = _panelType == panelType;
+    _setPanelType(isSamePanel ? ChatComposerPanelType.none : panelType);
+
+    if (isSamePanel) {
       _focusNode.requestFocus();
     } else {
-      _setPanelType(ChatComposerPanelType.attachments);
       _updateHeight(panelMaxHeight);
       if (_focusNode.hasFocus) {
         _focusNode.unfocus();
@@ -153,17 +116,12 @@ class _ChatComposerState extends State<ChatComposer>
   void _handleTapOutside(PointerDownEvent event) {
     final panelType = _panelType;
     _setPanelType(ChatComposerPanelType.none);
-    if (_focusNode.hasFocus) {
-      _focusNode.unfocus();
-    }
     if (panelType != ChatComposerPanelType.none) {
       _updateHeight(0);
     }
-  }
-
-  void _focus() {
-    _aimHeight = nullVal;
-    _focusNode.requestFocus();
+    if (_focusNode.hasFocus) {
+      _focusNode.unfocus();
+    }
   }
 
   @override

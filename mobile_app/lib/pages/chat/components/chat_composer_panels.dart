@@ -27,8 +27,10 @@ class ChatComposerPanelHost extends StatelessWidget {
         onGalleryTap: onGalleryTap,
         onFileTap: onFileTap,
       ),
-      ChatComposerPanelType.emojis =>
-        SizedBox() ?? _ComposerEmojiPanel(height: 300, onEmojiTap: onEmojiTap),
+      ChatComposerPanelType.emojis => _ComposerEmojiPanel(
+        height: 300,
+        onEmojiTap: onEmojiTap,
+      ),
       ChatComposerPanelType.none => const SizedBox.shrink(),
     };
   }

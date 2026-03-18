@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:provider/single_child_widget.dart';
 import '../common/app_constants.dart';
-import '../provider/chat_session_pprovider.dart';
+import '../provider/chat_session_provider.dart';
 import '../route/app_router.dart';
 import '../route/route_paths.dart';
 import '../theme/app_theme.dart';
@@ -26,14 +26,14 @@ class _AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
-  late final ChatSessionPProvider _provider;
+  late final ChatSessionProvider _provider;
   late final _router = createAppRouter();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _provider = ChatSessionPProvider();
+    _provider = ChatSessionProvider();
     unawaited(_bootstrapConnection());
   }
 
@@ -75,6 +75,6 @@ class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
   }
 
   List<SingleChildWidget> get _globalProviders => [
-        ChangeNotifierProvider<ChatSessionPProvider>.value(value: _provider),
-      ];
+    ChangeNotifierProvider<ChatSessionProvider>.value(value: _provider),
+  ];
 }

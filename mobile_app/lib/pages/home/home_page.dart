@@ -6,7 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../common/app_constants.dart';
 import '../../components/common_widgets.dart';
-import '../../provider/chat_session_pprovider.dart';
+import '../../provider/chat_session_provider.dart';
 import '../../route/route_paths.dart';
 
 class HomePage extends StatelessWidget {
@@ -14,7 +14,7 @@ class HomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<ChatSessionPProvider>();
+    final provider = context.watch<ChatSessionProvider>();
 
     return EasyChatPageScaffold(
       child: SingleChildScrollView(
@@ -56,7 +56,7 @@ class HomePage extends StatelessWidget {
 
   Future<void> _resume(BuildContext context) async {
     final restored = await context
-        .read<ChatSessionPProvider>()
+        .read<ChatSessionProvider>()
         .restoreConnectionIfNeeded();
     if (!context.mounted) return;
     if (restored) {

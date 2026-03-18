@@ -3,7 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/chat_message.dart';
-import '../../provider/chat_session_pprovider.dart';
+import '../../provider/chat_session_provider.dart';
 import '../../route/route_paths.dart';
 import 'components/chat_composer.dart';
 import 'components/chat_header_section.dart';
@@ -84,12 +84,12 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  ChatSessionPProvider get _provider {
-    return context.read<ChatSessionPProvider>();
+  ChatSessionProvider get _provider {
+    return context.read<ChatSessionProvider>();
   }
 
   Future<void> _disconnect(BuildContext context) async {
-    await context.read<ChatSessionPProvider>().disconnectAndClear();
+    await context.read<ChatSessionProvider>().disconnectAndClear();
     if (!context.mounted) return;
     context.go(RoutePaths.scan);
   }
@@ -115,7 +115,7 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
-  String _buildPhoneAddress(ChatSessionPProvider provider) {
+  String _buildPhoneAddress(ChatSessionProvider provider) {
     final ip = provider.ipController.text.trim();
     final port = provider.portController.text.trim();
     if (ip.isEmpty || port.isEmpty) {
@@ -192,7 +192,7 @@ class _ChatPageViewData {
   final String browserPeerAddress;
 
   static _ChatPageViewData select(BuildContext context) {
-    return context.select<ChatSessionPProvider, _ChatPageViewData>(
+    return context.select<ChatSessionProvider, _ChatPageViewData>(
       (provider) => _ChatPageViewData(
         hasCachedConnection: provider.hasCachedConnection,
         messages: provider.messages,

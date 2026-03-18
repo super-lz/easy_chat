@@ -4,7 +4,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 
 import '../../components/common_widgets.dart';
-import '../../provider/chat_session_pprovider.dart';
+import '../../provider/chat_session_provider.dart';
 import '../../route/route_paths.dart';
 
 class ScannerPage extends StatefulWidget {
@@ -24,14 +24,14 @@ class _ScannerPageState extends State<ScannerPage> {
     if (value == null || value.isEmpty) return;
 
     _hasScanned = true;
-    final provider = context.read<ChatSessionPProvider>();
+    final provider = context.read<ChatSessionProvider>();
     provider.pairingController.text = value;
     _apply(provider);
   }
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<ChatSessionPProvider>();
+    final provider = context.watch<ChatSessionProvider>();
 
     return EasyChatPageScaffold(
       bottomBar: BottomActionBar(
@@ -142,7 +142,7 @@ class _ScannerPageState extends State<ScannerPage> {
     );
   }
 
-  void _apply(ChatSessionPProvider provider) {
+  void _apply(ChatSessionProvider provider) {
     final isValid = provider.applyPairingInput();
     if (!mounted) return;
     if (isValid) {

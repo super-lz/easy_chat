@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../../../models/pending_attachment.dart';
-import '../../../provider/chat_session_pprovider.dart';
+import '../../../provider/chat_session_provider.dart';
 
 class ChatComposerPendingAttachmentsRow extends StatelessWidget {
-  const ChatComposerPendingAttachmentsRow({
-    super.key,
-    required this.provider,
-  });
+  const ChatComposerPendingAttachmentsRow({super.key, required this.provider});
 
-  final ChatSessionPProvider provider;
+  final ChatSessionProvider provider;
 
   @override
   Widget build(BuildContext context) {

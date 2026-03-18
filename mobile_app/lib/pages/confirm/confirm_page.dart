@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../components/common_widgets.dart';
-import '../../provider/chat_session_pprovider.dart';
+import '../../provider/chat_session_provider.dart';
 import '../../route/route_paths.dart';
 import '../../utils/network_tools.dart';
 
@@ -14,7 +14,7 @@ class ConfirmPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<ChatSessionPProvider>();
+    final provider = context.watch<ChatSessionProvider>();
     final pairingPayload = provider.pairingPayload;
     final subnetWarning = NetworkTools.buildSubnetWarning(
       pairingPayload?.serverUrl,
@@ -112,7 +112,7 @@ class ConfirmPage extends StatelessWidget {
   }
 
   Future<void> _approve(BuildContext context) async {
-    final success = await context.read<ChatSessionPProvider>().registerPhone();
+    final success = await context.read<ChatSessionProvider>().registerPhone();
     if (!context.mounted) return;
     if (success) {
       context.go(RoutePaths.chat);
@@ -121,7 +121,7 @@ class ConfirmPage extends StatelessWidget {
 
   Future<void> _handleBack(
     BuildContext context,
-    ChatSessionPProvider provider,
+    ChatSessionProvider provider,
   ) async {
     if (!provider.isRegistering) {
       _leavePage(context);
@@ -137,7 +137,7 @@ class ConfirmPage extends StatelessWidget {
 
   Future<bool> _confirmAbort(
     BuildContext context,
-    ChatSessionPProvider provider,
+    ChatSessionProvider provider,
   ) async {
     final result = await showDialog<bool>(
       context: context,

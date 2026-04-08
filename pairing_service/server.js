@@ -10,6 +10,7 @@ const PORT = Number(process.env.PORT || 8787)
 const ORIGIN = process.env.ALLOW_ORIGIN || '*'
 const PUBLIC_SERVER_URL = process.env.PUBLIC_SERVER_URL || ''
 const SESSION_TTL_MS = 1000 * 60 * 3
+const VERIFICATION_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
 const sessions = new Map()
 
@@ -45,7 +46,16 @@ function loadEnvFiles() {
   }
 }
 
-function createSession() {
+function createVerificationCode(length = 4) {
+  let code = ''
+  for (let index = 0; index < length; index += 1) {
+    const randomIndex = Math.floor(Math.random() * VERIFICATION_CODE_ALPHABET.length)
+    code += VERIFICATION_CODE_ALPHABET[randomIndex]
+  }
+  return code
+}
+
+function createSession(browserName = '当前浏览器', deviceInfo = '当前设备') {
   const sessionId = randomUUID()
   const challenge = randomUUID().replaceAll('-', '').slice(0, 24)
   const expiresAt = Date.now() + SESSION_TTL_MS
@@ -54,7 +64,9 @@ function createSession() {
     challenge,
     expiresAt,
     status: 'waiting',
-    browserName: 'Browser',
+    browserName,
+    deviceInfo,
+    verificationCode: createVerificationCode(),
     phoneEndpoint: null,
     subscribers: new Set(),
   }
@@ -150,17 +162,31 @@ const server = createServer(async (request, response) => {
   }
 
   if (request.method === 'POST' && url.pathname === '/api/pairings') {
-    const session = createSession()
+    const body = await parseJsonBody(request).catch(() => ({}))
+    const browserName =
+      typeof body.browserName === 'string' && body.browserName.trim().length > 0
+        ? body.browserName.trim().slice(0, 48)
+        : '当前浏览器'
+    const deviceInfo =
+      typeof body.deviceInfo === 'string' && body.deviceInfo.trim().length > 0
+        ? body.deviceInfo.trim().slice(0, 48)
+        : '当前设备'
+    const session = createSession(browserName, deviceInfo)
     const publicServerUrl = PUBLIC_SERVER_URL || `http://${request.headers.host}`
     const pairingUrl = `easychat://pair?sessionId=${session.sessionId}&challenge=${session.challenge}&serverUrl=${encodeURIComponent(
       publicServerUrl,
-    )}`
+    )}&browserName=${encodeURIComponent(session.browserName)}&deviceInfo=${encodeURIComponent(
+      session.deviceInfo,
+    )}&verificationCode=${encodeURIComponent(session.verificationCode)}`
 
     sendJson(response, 201, {
       sessionId: session.sessionId,
       challenge: session.challenge,
       expiresAt: session.expiresAt,
       status: session.status,
+      deviceInfo: session.deviceInfo,
+      browserName: session.browserName,
+      verificationCode: session.verificationCode,
       pairingUrl,
     })
     return
@@ -187,6 +213,9 @@ const server = createServer(async (request, response) => {
       sendSseEvent(response, 'status', {
         sessionId: session.sessionId,
         status: session.status,
+        deviceInfo: session.deviceInfo,
+        browserName: session.browserName,
+        verificationCode: session.verificationCode,
         phoneEndpoint: session.phoneEndpoint,
       })
 
@@ -201,6 +230,9 @@ const server = createServer(async (request, response) => {
       challenge: session.challenge,
       expiresAt: session.expiresAt,
       status: session.status,
+      deviceInfo: session.deviceInfo,
+      browserName: session.browserName,
+      verificationCode: session.verificationCode,
       phoneEndpoint: session.phoneEndpoint,
     })
     return

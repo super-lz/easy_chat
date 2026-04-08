@@ -21,14 +21,7 @@ export const defaultSettings: AppSettings = {
   showSystemMessages: true,
 }
 
-export const initialMessages: Message[] = [
-  {
-    id: 'm1',
-    sender: 'system',
-    type: 'text',
-    content: '打开手机 App 扫码后即可互发消息和文件',
-  },
-]
+export const initialMessages: Message[] = []
 
 export function persistEndpoint(nextEndpoint: PhoneEndpoint) {
   const serialized = JSON.stringify({

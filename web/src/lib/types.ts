@@ -27,6 +27,9 @@ export type PairingSession = {
   challenge: string
   expiresAt: number
   status: 'waiting' | 'phone_registered'
+  deviceInfo: string
+  browserName: string
+  verificationCode: string
   pairingUrl: string
 }
 
@@ -83,6 +86,7 @@ export type DirectPayload =
       role?: 'phone' | 'browser'
       name: string
       address: string
+      deviceInfo?: string
     }
   | {
       type: 'message'

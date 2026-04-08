@@ -3,7 +3,6 @@ import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 
-import '../../components/common_widgets.dart';
 import '../../provider/chat_session_provider.dart';
 import '../../route/route_paths.dart';
 
@@ -16,14 +15,23 @@ class ScannerPage extends StatefulWidget {
 
 class _ScannerPageState extends State<ScannerPage> {
   bool _hasScanned = false;
+  final MobileScannerController _scannerController = MobileScannerController();
 
-  void _handleBarcode(BarcodeCapture capture) {
-    if (_hasScanned) return;
+  @override
+  void dispose() {
+    _scannerController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleBarcode(BarcodeCapture capture) async {
+    if (_hasScanned || !mounted) return;
 
     final value = capture.barcodes.firstOrNull?.rawValue?.trim();
     if (value == null || value.isEmpty) return;
 
     _hasScanned = true;
+    await _scannerController.stop();
+    if (!mounted) return;
     final provider = context.read<ChatSessionProvider>();
     provider.pairingController.text = value;
     _apply(provider);
@@ -31,126 +39,124 @@ class _ScannerPageState extends State<ScannerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<ChatSessionProvider>();
-
-    return EasyChatPageScaffold(
-      bottomBar: BottomActionBar(
-        child: SizedBox(
-          width: double.infinity,
-          child: FilledButton(
-            onPressed: () => _apply(provider),
-            child: const Text('继续'),
-          ),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          PageHeader(
-            title: '扫码连接',
-            subtitle: '读取网页二维码',
-            leading: AppBackButton(
-              onPressed: () {
-                if (context.canPop()) {
-                  context.pop();
-                  return;
-                }
-                context.go(RoutePaths.home);
-              },
-            ),
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                children: [
-                  GlassSurface(
-                    radius: 30,
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+    return Scaffold(
+      backgroundColor: const Color(0xFFF3F4F7),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _ScannerHeader(
+                onBack: () {
+                  if (context.canPop()) {
+                    context.pop();
+                    return;
+                  }
+                  context.go(RoutePaths.home);
+                },
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                '扫码连接',
+                style: TextStyle(
+                  color: Color(0xFF151B26),
+                  fontSize: 28,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.6,
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                '将网页二维码放入框内',
+                style: TextStyle(
+                  color: Color(0xFF8B95A1),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 18),
+              AspectRatio(
+                aspectRatio: 1,
+                child: Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F1115),
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: Stack(
+                      alignment: Alignment.center,
                       children: [
-                        const Text(
-                          '将网页上的二维码放入取景框内，识别成功后会自动填入配对链接。',
-                          style: TextStyle(
-                            color: Color(0xFF667589),
-                            height: 1.5,
-                          ),
+                        MobileScanner(
+                          controller: _scannerController,
+                          onDetect: _handleBarcode,
                         ),
-                        const SizedBox(height: 16),
-                        Container(
-                          height: 340,
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(28),
-                            color: const Color(0xFF1A2330),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.12),
-                            ),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(28),
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                MobileScanner(onDetect: _handleBarcode),
-                                IgnorePointer(
-                                  child: Container(
-                                    width: 244,
-                                    height: 244,
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(26),
-                                      border: Border.all(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.85,
-                                        ),
-                                        width: 1.8,
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.white.withValues(
-                                            alpha: 0.08,
-                                          ),
-                                          blurRadius: 30,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
+                        IgnorePointer(
+                          child: FractionallySizedBox(
+                            widthFactor: 0.68,
+                            heightFactor: 0.68,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(24),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.92),
+                                  width: 2,
                                 ),
-                              ],
+                              ),
                             ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 14),
-                  LabeledField(
-                    label: '配对链接',
-                    controller: provider.pairingController,
-                    minLines: 3,
-                    maxLines: 5,
-                    hintText:
-                        'easychat://pair?sessionId=...&challenge=...&serverUrl=...',
-                    errorText: provider.registrationError,
-                  ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  void _apply(ChatSessionProvider provider) {
+  Future<void> _apply(ChatSessionProvider provider) async {
+    await _scannerController.stop();
+    if (!mounted) return;
+    await provider.ensureLocalDeviceNameLoaded();
+    if (!mounted) return;
     final isValid = provider.applyPairingInput();
     if (!mounted) return;
     if (isValid) {
-      context.push(RoutePaths.confirm);
+      await context.push(RoutePaths.confirm);
       return;
     }
-    if (GoRouterState.of(context).uri.path != RoutePaths.scan) {
-      context.go(RoutePaths.scan);
-    }
+    _hasScanned = false;
+    await _scannerController.start();
+  }
+}
+
+class _ScannerHeader extends StatelessWidget {
+  const _ScannerHeader({required this.onBack});
+
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        IconButton(
+          onPressed: onBack,
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+          style: IconButton.styleFrom(
+            minimumSize: const Size(42, 42),
+            backgroundColor: Colors.white,
+            foregroundColor: const Color(0xFF314054),
+            elevation: 0,
+            side: BorderSide.none,
+          ),
+        ),
+      ],
+    );
   }
 }

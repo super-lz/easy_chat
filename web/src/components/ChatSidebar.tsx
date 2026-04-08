@@ -3,6 +3,7 @@ import { Smartphone } from 'lucide-react'
 import type { DirectConnectionState } from '../lib/types'
 
 type ChatSidebarProps = {
+  browserDeviceInfo: string
   browserIp: string
   browserName: string
   browserPort: string
@@ -15,6 +16,7 @@ type ChatSidebarProps = {
 }
 
 export const ChatSidebar = memo(function ChatSidebar({
+  browserDeviceInfo,
   browserIp,
   browserName,
   browserPort,
@@ -26,7 +28,6 @@ export const ChatSidebar = memo(function ChatSidebar({
   onDisconnect,
 }: ChatSidebarProps) {
   const badgeClassName = mapConnectionBadgeClassName(connectionState.kind)
-  const networkStatusLabel = connectionState.kind === 'connected' ? '正常' : connectionState.label
   return (
     <aside className="sidebar">
       <div className="sidebar-top">
@@ -64,6 +65,10 @@ export const ChatSidebar = memo(function ChatSidebar({
               <code>{phoneName}</code>
             </div>
             <div className="network-detail-row">
+              <span>设备信息</span>
+              <code>{browserDeviceInfo}</code>
+            </div>
+            <div className="network-detail-row">
               <span>浏览器</span>
               <code>{browserName}</code>
             </div>
@@ -79,7 +84,7 @@ export const ChatSidebar = memo(function ChatSidebar({
               <span>状态</span>
               <ConnectionBadge
                 className={badgeClassName}
-                label={networkStatusLabel}
+                label={connectionState.label}
               />
             </div>
           </div>

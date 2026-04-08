@@ -57,7 +57,12 @@ export type IncomingFileComplete = {
 
 type DirectTransportCallbacks = {
   onOpen: (endpoint: PhoneEndpoint) => void
-  onPeerMeta: (payload: { role: 'phone' | 'browser'; name: string; address: string }) => void
+  onPeerMeta: (payload: {
+    role: 'phone' | 'browser'
+    name: string
+    address: string
+    deviceInfo?: string
+  }) => void
   onTextMessage: (payload: { text: string; compositionId?: string }) => void
   onIncomingFileStart: (event: IncomingFileStart) => void
   onIncomingFileProgress: (event: FileProgressEvent) => void
@@ -160,7 +165,12 @@ export class DirectTransportClient {
     socket.send(JSON.stringify({ type: 'message', text, compositionId }))
   }
 
-  sendPeerMeta(meta: { role: 'phone' | 'browser'; name: string; address: string }) {
+  sendPeerMeta(meta: {
+    role: 'phone' | 'browser'
+    name: string
+    address: string
+    deviceInfo?: string
+  }) {
     const socket = this.requireOpenSocket()
     socket.send(
       JSON.stringify({
@@ -169,6 +179,7 @@ export class DirectTransportClient {
         role: meta.role,
         name: meta.name,
         address: meta.address,
+        deviceInfo: meta.deviceInfo,
       }),
     )
   }
@@ -283,6 +294,7 @@ export class DirectTransportClient {
         role: payload.role,
         name: payload.name,
         address: payload.address,
+        deviceInfo: payload.deviceInfo,
       })
       return
     }

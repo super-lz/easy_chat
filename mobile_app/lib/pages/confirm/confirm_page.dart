@@ -4,10 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import '../../components/common_widgets.dart';
+import '../../models/pairing_payload.dart';
 import '../../provider/chat_session_provider.dart';
 import '../../route/route_paths.dart';
-import '../../utils/network_tools.dart';
 
 class ConfirmPage extends StatelessWidget {
   const ConfirmPage({super.key});
@@ -16,10 +15,10 @@ class ConfirmPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = context.watch<ChatSessionProvider>();
     final pairingPayload = provider.pairingPayload;
-    final subnetWarning = NetworkTools.buildSubnetWarning(
-      pairingPayload?.serverUrl,
-      provider.ipController.text.trim(),
-    );
+    final targetDevice = _targetDeviceLabel(pairingPayload);
+    final targetBrowser = _targetBrowserLabel(pairingPayload);
+    final verificationCode = _verificationCodeLabel(pairingPayload);
+    final targetCaption = _targetClientCaption(pairingPayload?.serverUrl);
 
     return PopScope(
       canPop: !provider.isRegistering,
@@ -31,79 +30,130 @@ class ConfirmPage extends StatelessWidget {
         if (!context.mounted) return;
         _leavePage(context);
       },
-      child: EasyChatPageScaffold(
-        bottomBar: BottomActionBar(
-          child: Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => unawaited(_handleBack(context, provider)),
-                  child: Text(provider.isRegistering ? '中断连接' : '返回扫码'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton(
-                  onPressed: provider.isRegistering
-                      ? null
-                      : () => unawaited(_approve(context)),
-                  child: Text(provider.isRegistering ? '连接中…' : '进入聊天'),
-                ),
-              ),
-            ],
-          ),
-        ),
-        child: SingleChildScrollView(
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF3F4F7),
+        body: SafeArea(
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              PageHeader(
-                title: '确认本机直连地址',
-                subtitle: '建立局域网会话',
-                leading: AppBackButton(
-                  onPressed: () => unawaited(_handleBack(context, provider)),
-                ),
-              ),
-              const GlassSurface(
-                radius: 28,
-                padding: EdgeInsets.all(20),
-                child: _ConfirmIntro(),
-              ),
-              const SizedBox(height: 14),
-              InfoTile(label: '会话', value: pairingPayload?.sessionId ?? '不可用'),
-              const SizedBox(height: 12),
-              InfoTile(
-                label: '电脑地址',
-                value: pairingPayload?.serverUrl ?? '不可用',
-              ),
-              const SizedBox(height: 12),
-              InfoTile(label: '当前状态', value: provider.serverStatus),
-              const SizedBox(height: 16),
-              LabeledField(
-                label: '设备名称',
-                controller: provider.deviceController,
-              ),
-              const SizedBox(height: 12),
-              LabeledField(label: '本机 IP', controller: provider.ipController),
-              if (subnetWarning != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  subnetWarning,
-                  style: const TextStyle(
-                    color: Color(0xFFBE715D),
-                    height: 1.45,
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _ConfirmHeader(
+                        onBack: () => unawaited(_handleBack(context, provider)),
+                      ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        '确认连接',
+                        style: TextStyle(
+                          color: Color(0xFF151B26),
+                          fontSize: 28,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.6,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      const Text(
+                        '确认当前手机与目标客户端无误后继续',
+                        style: TextStyle(
+                          color: Color(0xFF8B95A1),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      _ConfirmInfoCard(
+                        title: '本端信息',
+                        value: provider.deviceName,
+                        caption: '当前手机',
+                      ),
+                      const SizedBox(height: 12),
+                      _ConfirmInfoCard(
+                        title: '目标设备',
+                        value: targetDevice,
+                        caption: targetCaption,
+                      ),
+                      const SizedBox(height: 12),
+                      _ConfirmInfoCard(
+                        title: '浏览器',
+                        value: targetBrowser,
+                        caption: '来自网页端识别信息',
+                      ),
+                      const SizedBox(height: 12),
+                      _ConfirmInfoCard(
+                        title: '识别码',
+                        value: verificationCode,
+                        caption: '请和电脑上的二维码页核对',
+                      ),
+                      if (provider.registrationError != null) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF4F1),
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          child: Text(
+                            provider.registrationError!,
+                            style: const TextStyle(
+                              color: Color(0xFFBE715D),
+                              fontSize: 13.5,
+                              height: 1.45,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-              ],
-              const SizedBox(height: 12),
-              LabeledField(label: '本机端口', controller: provider.portController),
-              if (provider.registrationError != null) ...[
-                const SizedBox(height: 12),
-                Text(
-                  provider.registrationError!,
-                  style: const TextStyle(color: Color(0xFFBE715D)),
+              ),
+              Container(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
+                color: const Color(0xFFF7F8FA),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () =>
+                            unawaited(_handleBack(context, provider)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF5B6470),
+                          side: BorderSide.none,
+                          elevation: 0,
+                          backgroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                        child: Text(provider.isRegistering ? '中断' : '返回'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: provider.isRegistering
+                            ? null
+                            : () => unawaited(_approve(context)),
+                        style: FilledButton.styleFrom(
+                          elevation: 0,
+                          backgroundColor: const Color(0xFF169AF3),
+                          disabledBackgroundColor: const Color(0xFF8FD3FF),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                        child: Text(provider.isRegistering ? '连接中' : '确认连接'),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ],
           ),
         ),
@@ -142,22 +192,78 @@ class ConfirmPage extends StatelessWidget {
     final result = await showDialog<bool>(
       context: context,
       barrierDismissible: true,
+      barrierColor: const Color(0x3D101828),
       builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('中断连接'),
-          content: Text(
-            provider.isRegistering ? '当前正在连接中，确定要中断并返回上一页吗？' : '确定返回上一页吗？',
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+            ),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '中断连接？',
+                  style: TextStyle(
+                    color: Color(0xFF151B26),
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  provider.isRegistering ? '当前正在连接中，确定要中断并返回' : '确定返回上一页',
+                  style: const TextStyle(
+                    color: Color(0xFF66717D),
+                    fontSize: 14,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(false),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF5B6470),
+                          side: BorderSide.none,
+                          elevation: 0,
+                          backgroundColor: const Color(0xFFF3F5F7),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: const Text('继续'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(true),
+                        style: FilledButton.styleFrom(
+                          elevation: 0,
+                          backgroundColor: const Color(0xFF169AF3),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: const Text('中断'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('继续等待'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('中断返回'),
-            ),
-          ],
         );
       },
     );
@@ -174,85 +280,132 @@ class ConfirmPage extends StatelessWidget {
   }
 }
 
-class _ConfirmIntro extends StatelessWidget {
-  const _ConfirmIntro();
+class _ConfirmHeader extends StatelessWidget {
+  const _ConfirmHeader({required this.onBack});
+
+  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: const [
-        Text(
-          '检查设备名称、局域网 IP 和端口是否正确。确认后手机会启动本地服务，并把可连接地址回传给 web 端。',
-          style: TextStyle(color: Color(0xFF68778C), height: 1.55),
-        ),
-        SizedBox(height: 14),
-        Row(
-          children: [
-            Expanded(
-              child: _MiniStatus(label: '1', text: '校验配对信息'),
-            ),
-            SizedBox(width: 10),
-            Expanded(
-              child: _MiniStatus(label: '2', text: '启动本地服务'),
-            ),
-            SizedBox(width: 10),
-            Expanded(
-              child: _MiniStatus(label: '3', text: '进入聊天'),
-            ),
-          ],
+    return Row(
+      children: [
+        IconButton(
+          onPressed: onBack,
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+          style: IconButton.styleFrom(
+            minimumSize: const Size(42, 42),
+            backgroundColor: Colors.white,
+            foregroundColor: const Color(0xFF314054),
+            elevation: 0,
+            side: BorderSide.none,
+          ),
         ),
       ],
     );
   }
 }
 
-class _MiniStatus extends StatelessWidget {
-  const _MiniStatus({required this.label, required this.text});
+class _ConfirmInfoCard extends StatelessWidget {
+  const _ConfirmInfoCard({
+    required this.title,
+    required this.value,
+    required this.caption,
+  });
 
-  final String label;
-  final String text;
+  final String title;
+  final String value;
+  final String caption;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F7FB),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFD7E0EB)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 24,
-            height: 24,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: const Color(0xFF253243),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
+          Text(
+            title,
+            style: const TextStyle(
+              color: Color(0xFF8B95A1),
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            text,
-            textAlign: TextAlign.center,
+            value,
             style: const TextStyle(
-              color: Color(0xFF607086),
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+              color: Color(0xFF151B26),
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              height: 1.2,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            caption,
+            style: const TextStyle(
+              color: Color(0xFFA1A9B3),
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],
       ),
     );
   }
+}
+
+String _targetDeviceLabel(PairingPayload? pairingPayload) {
+  final deviceInfo = pairingPayload?.deviceInfo?.trim();
+  if (deviceInfo != null && deviceInfo.isNotEmpty) {
+    return deviceInfo;
+  }
+
+  final serverUrl = pairingPayload?.serverUrl;
+  if (serverUrl == null || serverUrl.isEmpty) {
+    return '当前设备';
+  }
+
+  final uri = Uri.tryParse(serverUrl);
+  if (uri == null) {
+    return '当前设备';
+  }
+
+  return uri.host.isEmpty ? '当前设备' : uri.host;
+}
+
+String _targetBrowserLabel(PairingPayload? pairingPayload) {
+  final browserName = pairingPayload?.browserName?.trim();
+  if (browserName != null && browserName.isNotEmpty) {
+    return browserName;
+  }
+  return '当前浏览器';
+}
+
+String _verificationCodeLabel(PairingPayload? pairingPayload) {
+  final verificationCode = pairingPayload?.verificationCode?.trim();
+  if (verificationCode != null && verificationCode.isNotEmpty) {
+    return verificationCode;
+  }
+  return '----';
+}
+
+String _targetClientCaption(String? serverUrl) {
+  if (serverUrl == null || serverUrl.isEmpty) {
+    return '来自网页二维码';
+  }
+
+  final uri = Uri.tryParse(serverUrl);
+  if (uri == null || uri.host.isEmpty) {
+    return '来自网页二维码';
+  }
+
+  final port = uri.hasPort ? ':${uri.port}' : '';
+  return '网页地址 ${uri.host}$port';
 }

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../chat_colors.dart';
+
 class ChatHeaderSection extends StatelessWidget {
   const ChatHeaderSection({
     super.key,
@@ -18,10 +20,7 @@ class ChatHeaderSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final status = _statusPresentation(serverStatus);
     return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: const Border(bottom: BorderSide(color: Color(0xFFD7E0EB))),
-      ),
+      decoration: const BoxDecoration(color: ChatColors.headerBackground),
       child: Padding(
         padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
         child: SizedBox(
@@ -39,7 +38,7 @@ class ChatHeaderSection extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            color: Color(0xFF1C2530),
+                            color: ChatColors.headerTitle,
                             fontSize: 20,
                             fontWeight: FontWeight.w700,
                             letterSpacing: -0.3,
@@ -61,9 +60,10 @@ class ChatHeaderSection extends StatelessWidget {
                   ),
                   style: IconButton.styleFrom(
                     minimumSize: const Size(42, 42),
-                    backgroundColor: Colors.white.withValues(alpha: 0.82),
-                    foregroundColor: const Color(0xFF344459),
-                    side: const BorderSide(color: Color(0xFFD7E0EB)),
+                    backgroundColor: ChatColors.headerExpandButtonBackground,
+                    foregroundColor: ChatColors.headerExpandButtonForeground,
+                    side: BorderSide.none,
+                    elevation: 0,
                   ),
                   tooltip: isExpanded ? '收起详情' : '展开详情',
                 ),
@@ -81,6 +81,7 @@ class ChatHeaderOverlayPanel extends StatelessWidget {
     super.key,
     required this.deviceName,
     required this.browserName,
+    required this.browserDeviceInfo,
     required this.phoneAddress,
     required this.browserAddress,
     required this.serverStatus,
@@ -89,6 +90,7 @@ class ChatHeaderOverlayPanel extends StatelessWidget {
 
   final String deviceName;
   final String browserName;
+  final String browserDeviceInfo;
   final String phoneAddress;
   final String browserAddress;
   final String serverStatus;
@@ -102,83 +104,80 @@ class ChatHeaderOverlayPanel extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFFF0F4FA),
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: const Color(0xFFD7E0EB)),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF334155).withValues(alpha: 0.16),
-              blurRadius: 34,
-              offset: const Offset(0, 10),
-            ),
-          ],
+        decoration: const BoxDecoration(
+          color: ChatColors.headerOverlayBackground,
         ),
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _InfoRow(label: '手机', value: deviceName),
-            _InfoRow(label: '浏览器', value: browserName),
-            _InfoRow(
-              label: '手机地址',
-              value: phoneAddress,
-              compactValue: true,
-              multilineValue: true,
-            ),
-            _InfoRow(
-              label: '浏览器地址',
-              value: browserAddress,
-              compactValue: true,
-              multilineValue: true,
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Row(
-                children: [
-                  const Text(
-                    '状态',
-                    style: TextStyle(
-                      color: Color(0xFF667589),
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const Spacer(),
-                  _StatusTag(presentation: status),
-                ],
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height - 140,
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(14, 0, 14, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _InfoRow(label: '手机', value: deviceName),
+              _InfoRow(label: '浏览器设备', value: browserDeviceInfo),
+              _InfoRow(label: '浏览器', value: browserName),
+              _InfoRow(
+                label: '手机地址',
+                value: phoneAddress,
+                compactValue: true,
+                multilineValue: true,
               ),
-            ),
-            const Divider(height: 1, color: Color(0xFFD5DEE9)),
-            if (warningText != null)
+              _InfoRow(
+                label: '浏览器地址',
+                value: browserAddress,
+                compactValue: true,
+                multilineValue: true,
+              ),
               Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: _WarningBlock(text: warningText),
-              ),
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: OutlinedButton(
-                  onPressed: onDisconnect,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF334155),
-                    side: const BorderSide(color: Color(0xFFD0DBE7)),
-                    backgroundColor: Colors.white.withValues(alpha: 0.78),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(
+                  children: [
+                    const Text(
+                      '状态',
+                      style: TextStyle(
+                        color: ChatColors.headerSectionLabel,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  child: const Text('断开连接'),
+                    const Spacer(),
+                    _StatusTag(presentation: status),
+                  ],
                 ),
               ),
-            ),
-          ],
+              if (warningText != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 14),
+                  child: _WarningBlock(text: warningText),
+                ),
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: onDisconnect,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: ChatColors.headerActionForeground,
+                      side: BorderSide.none,
+                      elevation: 0,
+                      backgroundColor: ChatColors.headerActionBackground,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: const Text('断开连接'),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -200,11 +199,8 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return Padding(
       padding: const EdgeInsets.symmetric(vertical: 11),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFD9E2ED))),
-      ),
       child: Row(
         crossAxisAlignment: multilineValue
             ? CrossAxisAlignment.start
@@ -213,7 +209,7 @@ class _InfoRow extends StatelessWidget {
           Text(
             label,
             style: const TextStyle(
-              color: Color(0xFF738297),
+              color: ChatColors.headerMetaLabel,
               fontSize: 16,
               fontWeight: FontWeight.w500,
             ),
@@ -231,7 +227,7 @@ class _InfoRow extends StatelessWidget {
                     ? TextOverflow.visible
                     : TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: Color(0xFF2A374A),
+                  color: ChatColors.headerMetaValue,
                   fontSize: compactValue ? 15.5 : 17.5,
                   fontWeight: FontWeight.w600,
                   letterSpacing: compactValue ? 0 : 0.2,
@@ -258,7 +254,6 @@ class _StatusTag extends StatelessWidget {
       decoration: BoxDecoration(
         color: presentation.background,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: presentation.border),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -297,9 +292,8 @@ class _WarningBlock extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF4F1),
+        color: ChatColors.warningBackground,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFF2CABC)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -307,7 +301,7 @@ class _WarningBlock extends StatelessWidget {
           const Text(
             '错误',
             style: TextStyle(
-              color: Color(0xFF9C5C4A),
+              color: ChatColors.warningTitle,
               fontSize: 16,
               fontWeight: FontWeight.w700,
             ),
@@ -316,7 +310,7 @@ class _WarningBlock extends StatelessWidget {
           Text(
             text,
             style: const TextStyle(
-              color: Color(0xFF7A5045),
+              color: ChatColors.warningText,
               fontSize: 14,
               height: 1.45,
             ),
@@ -352,58 +346,58 @@ _StatusPresentation _statusPresentation(String status) {
     return const _StatusPresentation(
       kind: _StatusKind.connected,
       label: '已连接',
-      text: Color(0xFF2F8F57),
-      dot: Color(0xFF4CA86D),
-      background: Color(0xFFEAF7EF),
-      border: Color(0xFFD2EEDD),
+      text: ChatColors.statusConnectedText,
+      dot: ChatColors.statusConnectedDot,
+      background: ChatColors.statusConnectedBackground,
+      border: ChatColors.statusConnectedBackground,
     );
   }
   if (status.contains('等待电脑重连')) {
     return const _StatusPresentation(
       kind: _StatusKind.reconnecting,
       label: '重连中',
-      text: Color(0xFFC47C19),
-      dot: Color(0xFFD39A2E),
-      background: Color(0xFFFAF3E7),
-      border: Color(0xFFF1DFC0),
+      text: ChatColors.statusReconnectingText,
+      dot: ChatColors.statusReconnectingDot,
+      background: ChatColors.statusReconnectingBackground,
+      border: ChatColors.statusReconnectingBackground,
     );
   }
   if (status.contains('监听中')) {
     return const _StatusPresentation(
       kind: _StatusKind.waiting,
       label: '等待接入',
-      text: Color(0xFF5B7393),
-      dot: Color(0xFF8099BA),
-      background: Color(0xFFEDF2F8),
-      border: Color(0xFFD8E2EE),
+      text: ChatColors.statusWaitingText,
+      dot: ChatColors.statusWaitingDot,
+      background: ChatColors.statusWaitingBackground,
+      border: ChatColors.statusWaitingBackground,
     );
   }
   if (status.contains('未启动')) {
     return const _StatusPresentation(
       kind: _StatusKind.offline,
       label: '未启动',
-      text: Color(0xFF9A5F4E),
-      dot: Color(0xFFBC7A66),
-      background: Color(0xFFF9EEE9),
-      border: Color(0xFFECCFC4),
+      text: ChatColors.statusOfflineText,
+      dot: ChatColors.statusOfflineDot,
+      background: ChatColors.statusOfflineBackground,
+      border: ChatColors.statusOfflineBackground,
     );
   }
 
   return const _StatusPresentation(
     kind: _StatusKind.unknown,
     label: '状态未知',
-    text: Color(0xFF6B7B90),
-    dot: Color(0xFF8C9BB0),
-    background: Color(0xFFEDF2F8),
-    border: Color(0xFFD8E2EE),
+    text: ChatColors.statusUnknownText,
+    dot: ChatColors.statusUnknownDot,
+    background: ChatColors.statusUnknownBackground,
+    border: ChatColors.statusUnknownBackground,
   );
 }
 
 String? _statusWarning(_StatusKind kind) {
   return switch (kind) {
-    _StatusKind.reconnecting => '连接已断开，重连中，请确保 App 保留在前台。',
-    _StatusKind.offline => '本地服务未启动，请返回重新建立直连。',
-    _StatusKind.waiting => '本地服务已启动，等待浏览器接入。',
+    _StatusKind.reconnecting => '连接已断开，重连中，请确保 App 保留在前台',
+    _StatusKind.offline => '本地服务未启动，请返回重新建立直连',
+    _StatusKind.waiting => '本地服务已启动，等待浏览器接入',
     _ => null,
   };
 }

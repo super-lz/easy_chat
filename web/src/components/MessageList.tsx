@@ -376,9 +376,22 @@ export const MessageList = memo(function MessageList({
                           </div>
                         </div>
                       ) : null}
-                      <div className="file-batch-list">
+                      <div
+                        className={`file-batch-list ${
+                          item.files.length > 1
+                            ? 'file-batch-list-multiple'
+                            : 'file-batch-list-single'
+                        }`}
+                      >
                         {item.files.map((message) => (
-                          <div key={message.id} className="file-batch-item">
+                          <div
+                            key={message.id}
+                            className={`file-batch-item ${
+                              item.files.length > 1
+                                ? 'file-batch-item-multiple'
+                                : 'file-batch-item-single'
+                            }`}
+                          >
                             {message.mimeType?.startsWith('image/') &&
                             message.downloadUrl ? (
                               <button

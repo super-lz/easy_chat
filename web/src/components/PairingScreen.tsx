@@ -2,15 +2,15 @@ import { QRCodeSVG } from 'qrcode.react'
 import type { PairingSession } from '../lib/types'
 
 type PairingScreenProps = {
-  browserName: string
   countdown: number
+  deviceInfo: string
   isLoading: boolean
   session: PairingSession | null
 }
 
 export function PairingScreen({
-  browserName,
   countdown,
+  deviceInfo,
   isLoading,
   session,
 }: PairingScreenProps) {
@@ -46,7 +46,9 @@ export function PairingScreen({
 
         <div className="pairing-meta-inline">
           <span>有效期 {countdown}s</span>
-          <span>{browserName}</span>
+          <span>{session?.deviceInfo ?? deviceInfo}</span>
+          <span>{session?.browserName ?? '当前浏览器'}</span>
+          <span>识别码 {session?.verificationCode ?? '----'}</span>
         </div>
       </div>
     </section>

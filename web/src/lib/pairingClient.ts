@@ -11,10 +11,15 @@ type PairingSubscriptionHandlers = {
   onError: () => void
 }
 
-export async function createPairingSession(baseUrl: string) {
+export async function createPairingSession(
+  baseUrl: string,
+  browserName: string,
+  deviceInfo: string,
+) {
   const response = await fetch(`${baseUrl}/api/pairings`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ browserName, deviceInfo }),
   })
 
   if (!response.ok) {

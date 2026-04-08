@@ -31,18 +31,20 @@ class PairingApiService {
     final uri = Uri.parse(
       '${request.serverUrl}/api/pairings/${request.sessionId}/register',
     );
-    final response = await http.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'challenge': request.challenge,
-        'deviceName': request.deviceName,
-        'phoneIp': request.phoneIp,
-        'phonePort': request.phonePort,
-        'token': request.token,
-        'protocolVersion': request.protocolVersion,
-      }),
-    );
+    final response = await http
+        .post(
+          uri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'challenge': request.challenge,
+            'deviceName': request.deviceName,
+            'phoneIp': request.phoneIp,
+            'phonePort': request.phonePort,
+            'token': request.token,
+            'protocolVersion': request.protocolVersion,
+          }),
+        )
+        .timeout(const Duration(seconds: 8));
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception('注册失败 (${response.statusCode})');

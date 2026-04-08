@@ -1,7 +1,9 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:keyboard_height_plugin/keyboard_height_plugin.dart';
+
+import '../chat_colors.dart';
 import '../../../provider/chat_session_provider.dart';
 import 'chat_composer_input.dart';
 import 'chat_composer_panels.dart';
@@ -17,12 +19,13 @@ class ChatComposer extends StatefulWidget {
 }
 
 class _ChatComposerState extends State<ChatComposer>
-    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
-  static const double panelMaxHeight = 400;
+    with SingleTickerProviderStateMixin {
+  static const double panelMaxHeight = 300;
 
-  double get _paddingBottom => MediaQuery.of(context).padding.bottom;
+  double get _paddingBottom => MediaQuery.of(context).viewPadding.bottom;
 
   final FocusNode _focusNode = FocusNode();
+  final KeyboardHeightPlugin _keyboardHeightPlugin = KeyboardHeightPlugin();
 
   double _currentHeight = 0;
 
@@ -34,9 +37,7 @@ class _ChatComposerState extends State<ChatComposer>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
-
-    _focusNode.addListener(_onFocusChanged);
+    _keyboardHeightPlugin.onKeyboardHeightChanged(_handleKeyboardHeightChanged);
 
     _controller = AnimationController(
       vsync: this,
@@ -47,25 +48,24 @@ class _ChatComposerState extends State<ChatComposer>
   }
 
   @override
-  void didChangeMetrics() {
-    super.didChangeMetrics();
-    final view = PlatformDispatcher.instance.views.first;
-    final bottom = view.viewInsets.bottom / view.devicePixelRatio;
-
-    _updateHeight(bottom);
-  }
-
-  @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _focusNode.removeListener(_onFocusChanged);
+    _controller.dispose();
     _focusNode.dispose();
     super.dispose();
   }
 
-  void _onFocusChanged() {}
+  void _handleKeyboardHeightChanged(double height) {
+    if (!mounted) {
+      return;
+    }
 
-  void _updateHeight(double targetHeight) {
+    if (_panelType != ChatComposerPanelType.none) {
+      return;
+    }
+    _animateHeight(height);
+  }
+
+  void _animateHeight(double targetHeight) {
     _controller.stop();
     final double target = targetHeight < 0 ? 0 : targetHeight;
 
@@ -89,7 +89,10 @@ class _ChatComposerState extends State<ChatComposer>
     });
   }
 
-  void _handleKeyboardTap() async {}
+  void _handleKeyboardTap() {
+    _setPanelType(ChatComposerPanelType.none);
+    _focus();
+  }
 
   void _handleEmojiTap() {
     _togglePanel(ChatComposerPanelType.emojis);
@@ -100,25 +103,29 @@ class _ChatComposerState extends State<ChatComposer>
   }
 
   void _togglePanel(ChatComposerPanelType panelType) {
-    final isSamePanel = _panelType == panelType;
-    _setPanelType(isSamePanel ? ChatComposerPanelType.none : panelType);
-
-    if (isSamePanel) {
-      _focusNode.requestFocus();
+    if (panelType != _panelType) {
+      _setPanelType(panelType);
+      _animateHeight(panelMaxHeight);
+      _unfocus();
     } else {
-      _updateHeight(panelMaxHeight);
-      if (_focusNode.hasFocus) {
-        _focusNode.unfocus();
-      }
+      _setPanelType(ChatComposerPanelType.none);
+      _focus();
     }
   }
 
   void _handleTapOutside(PointerDownEvent event) {
-    final panelType = _panelType;
-    _setPanelType(ChatComposerPanelType.none);
-    if (panelType != ChatComposerPanelType.none) {
-      _updateHeight(0);
+    if (_panelType != ChatComposerPanelType.none) {
+      _animateHeight(0);
     }
+    _setPanelType(ChatComposerPanelType.none);
+    _unfocus();
+  }
+
+  void _focus() {
+    _focusNode.requestFocus();
+  }
+
+  void _unfocus() {
     if (_focusNode.hasFocus) {
       _focusNode.unfocus();
     }
@@ -129,7 +136,7 @@ class _ChatComposerState extends State<ChatComposer>
     return TapRegion(
       onTapOutside: _handleTapOutside,
       child: ColoredBox(
-        color: Colors.white,
+        color: ChatColors.composerSurface,
         child: Padding(
           padding: EdgeInsets.only(bottom: _paddingBottom),
           child: Column(
@@ -140,11 +147,9 @@ class _ChatComposerState extends State<ChatComposer>
                 const SizedBox(height: 8),
               ],
               Container(
-                padding: EdgeInsets.fromLTRB(12, 8, 12, 8),
-                decoration: BoxDecoration(
-                  border: const Border(
-                    top: BorderSide(color: Color(0xFFE2E8F0)),
-                  ),
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                decoration: const BoxDecoration(
+                  color: ChatColors.composerSurface,
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
@@ -165,21 +170,42 @@ class _ChatComposerState extends State<ChatComposer>
                       ),
                     ),
                     const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed: widget.provider.canSend
-                          ? () => unawaited(widget.provider.sendDraft())
-                          : null,
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(50, 50),
-                        padding: EdgeInsets.zero,
-                        backgroundColor: const Color(0xFF111827),
-                        disabledBackgroundColor: const Color(0xFFD3DBE6),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(25),
+                    SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: FilledButton(
+                        onPressed: widget.provider.canSend
+                            ? () => unawaited(widget.provider.sendDraft())
+                            : null,
+                        style: ButtonStyle(
+                          padding: const WidgetStatePropertyAll(
+                            EdgeInsets.zero,
+                          ),
+                          elevation: const WidgetStatePropertyAll(0),
+                          backgroundColor: WidgetStateProperty.resolveWith((
+                            states,
+                          ) {
+                            if (states.contains(WidgetState.disabled)) {
+                              return ChatColors.sendButtonDisabledBackground;
+                            }
+                            return ChatColors.sendButtonEnabledBackground;
+                          }),
+                          foregroundColor: WidgetStateProperty.resolveWith((
+                            states,
+                          ) {
+                            if (states.contains(WidgetState.disabled)) {
+                              return ChatColors.sendButtonDisabledForeground;
+                            }
+                            return ChatColors.sendButtonForeground;
+                          }),
+                          shape: WidgetStatePropertyAll(
+                            RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(22),
+                            ),
+                          ),
                         ),
+                        child: const Icon(Icons.arrow_upward_rounded, size: 20),
                       ),
-                      child: const Icon(Icons.arrow_upward_rounded),
                     ),
                   ],
                 ),
@@ -187,10 +213,12 @@ class _ChatComposerState extends State<ChatComposer>
               AnimatedBuilder(
                 animation: _controller,
                 builder: (context, child) {
-                  return ColoredBox(
-                    color: Colors.black,
-                    child: SizedBox(
+                  return ClipRect(
+                    child: Container(
                       height: _heightAnimation.value,
+                      decoration: const BoxDecoration(
+                        color: ChatColors.composerPanelSurface,
+                      ),
                       child: child,
                     ),
                   );

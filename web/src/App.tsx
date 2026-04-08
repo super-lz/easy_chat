@@ -1,11 +1,12 @@
 import { ChatScreen } from './components/ChatScreen'
 import { PairingScreen } from './components/PairingScreen'
-import { getBrowserName } from './lib/browser'
+import { getBrowserName, getDeviceInfo } from './lib/browser'
 import { useEasyChat } from './hooks/useEasyChat'
 import './App.css'
 
 function App() {
   const browserName = getBrowserName(navigator.userAgent)
+  const deviceInfo = getDeviceInfo(navigator.userAgent)
   const currentLocation = window.location
   const browserIp = currentLocation.hostname || '未知'
   const browserPort =
@@ -42,8 +43,8 @@ function App() {
     <main className={`app-frame ${phase === 'pairing' ? 'app-frame-pairing' : ''}`}>
       {phase === 'pairing' ? (
         <PairingScreen
-          browserName={browserName}
           countdown={countdown}
+          deviceInfo={deviceInfo}
           isLoading={isLoading}
           session={session}
         />
@@ -58,6 +59,7 @@ function App() {
           draft={draft}
           error={error}
           fileInputRef={fileInputRef}
+          localDeviceInfo={deviceInfo}
           localDeviceName={browserName}
           messages={visibleMessages}
           pendingAttachments={pendingAttachments}

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../chat_colors.dart';
 import '../../../models/pending_attachment.dart';
 import '../../../provider/chat_session_provider.dart';
 
@@ -13,7 +14,7 @@ class ChatComposerPendingAttachmentsRow extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F9FC),
+        color: ChatColors.pendingBarBackground,
         borderRadius: BorderRadius.circular(18),
       ),
       child: Column(
@@ -23,7 +24,7 @@ class ChatComposerPendingAttachmentsRow extends StatelessWidget {
               Text(
                 '已选 ${provider.pendingAttachments.length} 个文件',
                 style: const TextStyle(
-                  color: Color(0xFF607086),
+                  color: ChatColors.pendingBarTitle,
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
                 ),
@@ -32,7 +33,7 @@ class ChatComposerPendingAttachmentsRow extends StatelessWidget {
               TextButton(
                 onPressed: provider.clearPendingAttachments,
                 style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF8B5E66),
+                  foregroundColor: ChatColors.pendingBarClear,
                   visualDensity: VisualDensity.compact,
                 ),
                 child: const Text('清空'),
@@ -80,7 +81,7 @@ class _PendingAttachmentCard extends StatelessWidget {
             width: 160,
             padding: const EdgeInsets.fromLTRB(8, 8, 10, 8),
             decoration: BoxDecoration(
-              color: const Color(0xFFFFFFFF),
+              color: ChatColors.pendingCardBackground,
               borderRadius: BorderRadius.circular(16),
             ),
             child: Row(
@@ -102,13 +103,13 @@ class _PendingAttachmentCard extends StatelessWidget {
                     height: 44,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5FA),
+                      color: ChatColors.pendingCardFileTypeBackground,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
                       _fileKindLabel(attachment.name),
                       style: const TextStyle(
-                        color: Color(0xFF445368),
+                        color: ChatColors.pendingCardFileTypeText,
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
                       ),
@@ -125,7 +126,7 @@ class _PendingAttachmentCard extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: Color(0xFF1C2530),
+                          color: ChatColors.pendingCardFileName,
                           fontWeight: FontWeight.w700,
                           fontSize: 12,
                           height: 1.1,
@@ -135,7 +136,7 @@ class _PendingAttachmentCard extends StatelessWidget {
                       Text(
                         _formatAttachmentSize(attachment.size),
                         style: const TextStyle(
-                          color: Color(0xFF7C8899),
+                          color: ChatColors.pendingCardFileMeta,
                           fontSize: 11,
                           height: 1.1,
                         ),
@@ -155,7 +156,7 @@ class _PendingAttachmentCard extends StatelessWidget {
                 width: 22,
                 height: 22,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1F2937),
+                  color: ChatColors.pendingCardRemoveBackground,
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: const Icon(

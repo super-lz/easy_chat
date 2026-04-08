@@ -2,10 +2,15 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_file_dialog/flutter_file_dialog.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as path;
+import 'package:permission_handler/permission_handler.dart';
+import 'package:saver_gallery/saver_gallery.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../common/app_constants.dart';
 import '../models/chat_message.dart';
@@ -15,7 +20,9 @@ import '../models/pending_attachment.dart';
 import '../models/pairing_payload.dart';
 import '../service/connection_persistence.dart';
 import '../service/local_chat_server.dart';
+import '../service/managed_file_store.dart';
 import '../service/pairing_api_service.dart';
+import '../utils/app_error_formatter.dart';
 import '../utils/network_tools.dart';
 
 class ChatSessionProvider extends ChangeNotifier {
@@ -23,8 +30,10 @@ class ChatSessionProvider extends ChangeNotifier {
     ConnectionPersistence? persistence,
     LocalChatServer? chatServer,
     PairingApiService? pairingApiService,
+    ManagedFileStore? managedFileStore,
   }) : _persistence = persistence ?? ConnectionPersistence(),
        _pairingApiService = pairingApiService ?? const PairingApiService(),
+       _managedFileStore = managedFileStore ?? ManagedFileStore(),
        _chatServer =
            chatServer ??
            LocalChatServer(
@@ -38,6 +47,7 @@ class ChatSessionProvider extends ChangeNotifier {
            ) {
     _bindServerCallbacks();
     messageController.addListener(_safeNotify);
+    unawaited(_loadLocalDeviceName());
   }
 
   final TextEditingController messageController = TextEditingController();
@@ -49,10 +59,12 @@ class ChatSessionProvider extends ChangeNotifier {
   final TextEditingController deviceController = TextEditingController(
     text: '我的手机',
   );
+  final DeviceInfoPlugin _deviceInfo = DeviceInfoPlugin();
   final List<ChatMessage> _messages = List<ChatMessage>.from(initialMessages);
   final List<PendingAttachment> _pendingAttachments = [];
   final ConnectionPersistence _persistence;
   final PairingApiService _pairingApiService;
+  final ManagedFileStore _managedFileStore;
   final LocalChatServer _chatServer;
 
   PairingPayload? _pairingPayload;
@@ -63,8 +75,10 @@ class ChatSessionProvider extends ChangeNotifier {
   bool _hasCachedConnection = false;
   String? _browserPeerName;
   String? _browserPeerAddress;
+  String? _browserPeerDeviceInfo;
   bool _disposed = false;
   int _registrationAttemptId = 0;
+  Future<void>? _loadDeviceNameFuture;
 
   List<ChatMessage> get messages => List.unmodifiable(_messages);
   List<PendingAttachment> get pendingAttachments =>
@@ -76,6 +90,12 @@ class ChatSessionProvider extends ChangeNotifier {
   bool get isRegistering => _isRegistering;
   bool get hasCachedConnection => _hasCachedConnection;
   String get browserPeerName => _browserPeerName ?? '等待浏览器同步';
+  String get browserPeerDeviceInfo =>
+      _browserPeerDeviceInfo?.trim().isNotEmpty == true
+      ? _browserPeerDeviceInfo!
+      : (_pairingPayload?.deviceInfo?.trim().isNotEmpty == true
+            ? _pairingPayload!.deviceInfo!
+            : '等待浏览器同步');
   String get browserPeerAddress => _browserPeerAddress ?? '等待浏览器同步';
   bool get canSend =>
       messageController.text.trim().isNotEmpty ||
@@ -83,6 +103,54 @@ class ChatSessionProvider extends ChangeNotifier {
   String get deviceName => deviceController.text.trim().isEmpty
       ? '我的手机'
       : deviceController.text.trim();
+
+  Future<void> _loadLocalDeviceName() async {
+    try {
+      String nextName = '我的手机';
+      if (Platform.isAndroid) {
+        final info = await _deviceInfo.androidInfo;
+        final model = info.model.trim();
+        final brand = info.brand.trim();
+        final manufacturer = info.manufacturer.trim();
+        final device = info.device.trim();
+        if (model.isNotEmpty) {
+          nextName = model;
+        } else {
+          final parts = [
+            brand,
+            manufacturer,
+            device,
+          ].where((part) => part.isNotEmpty).toSet().toList();
+          if (parts.isNotEmpty) {
+            nextName = parts.first;
+          }
+        }
+      } else if (Platform.isIOS) {
+        final info = await _deviceInfo.iosInfo;
+        final name = info.name.trim();
+        final model = info.model.trim();
+        final machine = info.utsname.machine.trim();
+        final parts = [
+          name,
+          model,
+          machine,
+        ].where((part) => part.isNotEmpty).toList();
+        if (parts.isNotEmpty) {
+          nextName = parts.take(2).join(' · ');
+        }
+      }
+
+      if (_disposed) return;
+      deviceController.text = nextName;
+      _safeNotify();
+    } catch (_) {
+      // 读取失败时保留默认名称即可。
+    }
+  }
+
+  Future<void> ensureLocalDeviceNameLoaded() {
+    return _loadDeviceNameFuture ??= _loadLocalDeviceName();
+  }
 
   void _bindServerCallbacks() {
     _chatServer.onBrowserMessage = (payload) {
@@ -105,6 +173,10 @@ class ChatSessionProvider extends ChangeNotifier {
       if (payload.role == 'browser') {
         _browserPeerName = payload.name;
         _browserPeerAddress = payload.address;
+        final nextDeviceInfo = payload.deviceInfo?.trim();
+        if (nextDeviceInfo != null && nextDeviceInfo.isNotEmpty) {
+          _browserPeerDeviceInfo = nextDeviceInfo;
+        }
         _safeNotify();
       }
     };
@@ -163,15 +235,7 @@ class ChatSessionProvider extends ChangeNotifier {
       _hasCachedConnection = true;
       _messages
         ..clear()
-        ..addAll(initialMessages)
-        ..add(
-          ChatMessage(
-            id: 'system-resume',
-            sender: 'system',
-            text: '已恢复本地直连服务，等待电脑重新连接。',
-            isSystem: true,
-          ),
-        );
+        ..addAll(initialMessages);
       _safeNotify();
       return true;
     } catch (_) {
@@ -213,7 +277,7 @@ class ChatSessionProvider extends ChangeNotifier {
     _registrationError = null;
     _pairingPayload = nextPayload;
     if (nextPayload == null) {
-      _registrationError = '二维码内容无效，请重新扫描。';
+      _registrationError = '二维码内容无效，请重新扫描';
       _safeNotify();
       return false;
     }
@@ -243,15 +307,32 @@ class ChatSessionProvider extends ChangeNotifier {
     }
     final phoneIp = (localIp ?? ipController.text.trim()).trim();
     if (!NetworkTools.isUsableIpv4(phoneIp)) {
-      _registrationError = '无法获取本机局域网 IP，请手动确认后重试。';
+      _registrationError = '无法获取本机局域网 IP，请手动确认后重试';
       _isRegistering = false;
       _safeNotify();
       return false;
     }
     ipController.text = phoneIp;
+    final serverUri = Uri.tryParse(pairingPayload.serverUrl);
+    final subnetWarning = NetworkTools.buildSubnetWarning(
+      pairingPayload.serverUrl,
+      phoneIp,
+    );
 
     try {
       await _chatServer.start(port: port, token: token);
+    } catch (error) {
+      if (_isActiveRegistrationAttempt(attemptId)) {
+        _registrationError = AppErrorFormatter.message(
+          error,
+          fallback: '无法在手机上开启连接服务，请稍后重试。',
+        );
+        _safeNotify();
+      }
+      return false;
+    }
+
+    try {
       if (!_isActiveRegistrationAttempt(attemptId)) {
         await _chatServer.stop();
         return false;
@@ -285,21 +366,19 @@ class ChatSessionProvider extends ChangeNotifier {
       _hasCachedConnection = true;
       _messages
         ..clear()
-        ..addAll(initialMessages)
-        ..add(
-          ChatMessage(
-            id: 'system-direct-started',
-            sender: 'system',
-            text: '本地直连服务已启动。',
-            isSystem: true,
-          ),
-        );
+        ..addAll(initialMessages);
       _safeNotify();
       return true;
     } catch (error) {
       await _chatServer.stop();
       if (_isActiveRegistrationAttempt(attemptId)) {
-        _registrationError = error.toString();
+        _registrationError = AppErrorFormatter.message(
+          error,
+          fallback: '连接电脑失败，请稍后重试。',
+          assumeNetworkContext: true,
+          uri: serverUri,
+          networkHint: subnetWarning,
+        );
         _safeNotify();
       }
       return false;
@@ -323,6 +402,7 @@ class ChatSessionProvider extends ChangeNotifier {
     _hasCachedConnection = false;
     _browserPeerName = null;
     _browserPeerAddress = null;
+    _browserPeerDeviceInfo = null;
     _pairingPayload = null;
     _pendingAttachments.clear();
     await _chatServer.stop();
@@ -342,6 +422,7 @@ class ChatSessionProvider extends ChangeNotifier {
     _directToken = null;
     _browserPeerName = null;
     _browserPeerAddress = null;
+    _browserPeerDeviceInfo = null;
     _pairingPayload = null;
     pairingController.clear();
     _registrationError = null;
@@ -370,6 +451,11 @@ class ChatSessionProvider extends ChangeNotifier {
         final batchTotal = _pendingAttachments.length > 1
             ? _pendingAttachments.length
             : null;
+        final storedPath = await _managedFileStore.storeBytes(
+          bytes: attachment.bytes,
+          fileName: attachment.name,
+          bucket: 'outgoing',
+        );
 
         _messages.add(
           ChatMessage(
@@ -384,6 +470,7 @@ class ChatSessionProvider extends ChangeNotifier {
             bytes: attachment.bytes,
             mimeType: attachment.mimeType,
             progress: 0,
+            savedPath: storedPath,
           ),
         );
 
@@ -496,6 +583,9 @@ class ChatSessionProvider extends ChangeNotifier {
     final sessionId = uri.queryParameters['sessionId'];
     final challenge = uri.queryParameters['challenge'];
     final serverUrl = uri.queryParameters['serverUrl'];
+    final browserName = uri.queryParameters['browserName']?.trim();
+    final deviceInfo = uri.queryParameters['deviceInfo']?.trim();
+    final verificationCode = uri.queryParameters['verificationCode']?.trim();
     if (sessionId == null || challenge == null || serverUrl == null) {
       return null;
     }
@@ -504,6 +594,13 @@ class ChatSessionProvider extends ChangeNotifier {
       sessionId: sessionId,
       challenge: challenge,
       serverUrl: serverUrl,
+      browserName: browserName == null || browserName.isEmpty
+          ? null
+          : browserName,
+      deviceInfo: deviceInfo == null || deviceInfo.isEmpty ? null : deviceInfo,
+      verificationCode: verificationCode == null || verificationCode.isEmpty
+          ? null
+          : verificationCode,
     );
   }
 
@@ -543,21 +640,161 @@ class ChatSessionProvider extends ChangeNotifier {
 
   Future<String?> _saveReceivedFile(DirectFilePayload file) async {
     try {
-      final directory = await getApplicationDocumentsDirectory();
-      final incomingDir = Directory('${directory.path}/incoming');
-      if (!incomingDir.existsSync()) {
-        incomingDir.createSync(recursive: true);
-      }
-
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final safeName = file.name.replaceAll(RegExp(r'[\\\\/:*?"<>|]'), '_');
-      final path = '${incomingDir.path}/$timestamp-$safeName';
-      final output = File(path);
-      await output.writeAsBytes(file.bytes, flush: true);
-      return path;
+      return await _managedFileStore.storeBytes(
+        bytes: file.bytes,
+        fileName: file.name,
+        bucket: 'incoming',
+      );
     } catch (_) {
       return null;
     }
+  }
+
+  Future<String> saveFileMessageToGallery(ChatMessage message) async {
+    final sourcePath = await _resolveMessageFilePath(message);
+    if (!_isGalleryAsset(message)) {
+      throw Exception('该文件不支持保存到相册');
+    }
+    await _ensureGalleryPermission();
+    final result = await SaverGallery.saveFile(
+      filePath: sourcePath,
+      fileName: message.text,
+      androidRelativePath: _galleryRelativePath(message),
+      skipIfExists: false,
+    );
+    if (!result.isSuccess) {
+      throw Exception(result.errorMessage ?? '保存到相册失败');
+    }
+    return '已保存到相册';
+  }
+
+  Future<String> exportFileMessage(ChatMessage message) async {
+    final sourcePath = await _resolveMessageFilePath(message);
+    final outputPath = await FlutterFileDialog.saveFile(
+      params: SaveFileDialogParams(
+        sourceFilePath: sourcePath,
+        fileName: message.text,
+        mimeTypesFilter: _mimeTypesForSave(message),
+        localOnly: true,
+      ),
+    );
+    if (outputPath == null) {
+      return '已取消保存';
+    }
+    return '已保存到所选位置';
+  }
+
+  Future<String> saveFileMessagesToGallery(List<ChatMessage> messages) async {
+    final files = messages.where((message) => message.type == 'file').toList(growable: false);
+    if (files.isEmpty) {
+      throw Exception('没有可保存的文件');
+    }
+    if (!files.every(_isGalleryAsset)) {
+      throw Exception('只有图片和视频可以批量保存到相册');
+    }
+    await _ensureGalleryPermission();
+    final payload = <SaveFileData>[];
+    for (final message in files) {
+      payload.add(
+        SaveFileData(
+          filePath: await _resolveMessageFilePath(message),
+          fileName: message.text,
+          androidRelativePath: _galleryRelativePath(message),
+        ),
+      );
+    }
+    final result = await SaverGallery.saveFiles(payload, skipIfExists: false);
+    if (!result.isSuccess) {
+      throw Exception(result.errorMessage ?? '批量保存到相册失败');
+    }
+    return '已保存 ${files.length} 个文件到相册';
+  }
+
+  Future<String> exportFileMessages(List<ChatMessage> messages) async {
+    final files = messages.where((message) => message.type == 'file').toList(growable: false);
+    if (files.isEmpty) {
+      throw Exception('没有可保存的文件');
+    }
+    if (await FlutterFileDialog.isPickDirectorySupported()) {
+      final directory = await FlutterFileDialog.pickDirectory();
+      if (directory == null) {
+        return '已取消保存';
+      }
+      for (final message in files) {
+        final filePath = await _resolveMessageFilePath(message);
+        final bytes = await File(filePath).readAsBytes();
+        await FlutterFileDialog.saveFileToDirectory(
+          directory: directory,
+          data: bytes,
+          fileName: message.text,
+          mimeType: message.mimeType ?? _inferMimeType(_extensionOf(message.text)),
+          replace: false,
+        );
+      }
+      return '已保存 ${files.length} 个文件';
+    }
+
+    var savedCount = 0;
+    for (final message in files) {
+      final outputPath = await FlutterFileDialog.saveFile(
+        params: SaveFileDialogParams(
+          sourceFilePath: await _resolveMessageFilePath(message),
+          fileName: message.text,
+          mimeTypesFilter: _mimeTypesForSave(message),
+          localOnly: true,
+        ),
+      );
+      if (outputPath != null) {
+        savedCount += 1;
+      }
+    }
+
+    return savedCount == 0 ? '已取消保存' : '已保存 $savedCount 个文件';
+  }
+
+  Future<String> saveFileMessagesAsZip(List<ChatMessage> messages) async {
+    final files = messages.where((message) => message.type == 'file').toList(growable: false);
+    if (files.isEmpty) {
+      throw Exception('没有可压缩的文件');
+    }
+
+    final zipPath = await _managedFileStore.createZip(
+      entries: [
+        for (final message in files)
+          ManagedZipEntry(
+            filePath: await _resolveMessageFilePath(message),
+            nameInZip: message.text,
+          ),
+      ],
+      fileName: 'easychat-files-${DateTime.now().millisecondsSinceEpoch}.zip',
+    );
+
+    final outputPath = await FlutterFileDialog.saveFile(
+      params: SaveFileDialogParams(
+        sourceFilePath: zipPath,
+        fileName: path.basename(zipPath),
+        mimeTypesFilter: const ['application/zip'],
+        localOnly: true,
+      ),
+    );
+
+    if (outputPath == null) {
+      return '已取消压缩保存';
+    }
+
+    return '已压缩保存 ${files.length} 个文件';
+  }
+
+  Future<String> shareFileMessage(ChatMessage message) async {
+    final sourcePath = await _resolveMessageFilePath(message);
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(sourcePath, mimeType: message.mimeType)],
+        text: message.text,
+        fileNameOverrides: [message.text],
+      ),
+    );
+    return '已打开分享面板';
   }
 
   String _localizeServerStatus(String status) {
@@ -588,6 +825,11 @@ class ChatSessionProvider extends ChangeNotifier {
       'gif' => 'image/gif',
       'webp' => 'image/webp',
       'heic' => 'image/heic',
+      'mp4' => 'video/mp4',
+      'mov' => 'video/quicktime',
+      'm4v' => 'video/x-m4v',
+      'avi' => 'video/x-msvideo',
+      'mkv' => 'video/x-matroska',
       'pdf' => 'application/pdf',
       'txt' => 'text/plain',
       'json' => 'application/json',
@@ -619,6 +861,71 @@ class ChatSessionProvider extends ChangeNotifier {
       return null;
     }
     return fileName.substring(dot + 1);
+  }
+
+  Future<String> _resolveMessageFilePath(ChatMessage message) async {
+    final existingPath = message.savedPath;
+    if (existingPath != null && await File(existingPath).exists()) {
+      return existingPath;
+    }
+    final bytes = message.bytes;
+    if (bytes == null) {
+      throw Exception('文件内容不可用');
+    }
+    return _managedFileStore.storeBytes(
+      bytes: bytes,
+      fileName: message.text,
+      bucket: message.sender == 'phone' ? 'outgoing' : 'incoming',
+    );
+  }
+
+  Future<String> ensureMessageFilePath(ChatMessage message) {
+    return _resolveMessageFilePath(message);
+  }
+
+  bool _isGalleryAsset(ChatMessage message) {
+    final mimeType = message.mimeType ?? '';
+    return mimeType.startsWith('image/') || mimeType.startsWith('video/');
+  }
+
+  String _galleryRelativePath(ChatMessage message) {
+    final mimeType = message.mimeType ?? '';
+    if (mimeType.startsWith('image/')) {
+      return 'Pictures/EasyChat';
+    }
+    if (mimeType.startsWith('video/')) {
+      return 'Movies/EasyChat';
+    }
+    return 'Documents/EasyChat';
+  }
+
+  List<String>? _mimeTypesForSave(ChatMessage message) {
+    final mimeType = message.mimeType?.trim();
+    if (mimeType == null || mimeType.isEmpty) {
+      return null;
+    }
+    return [mimeType];
+  }
+
+  Future<void> _ensureGalleryPermission() async {
+    if (Platform.isIOS) {
+      final status = await Permission.photosAddOnly.request();
+      if (!status.isGranted && !status.isLimited) {
+        throw Exception('没有相册保存权限');
+      }
+      return;
+    }
+
+    if (Platform.isAndroid) {
+      final info = await _deviceInfo.androidInfo;
+      if (info.version.sdkInt >= 29) {
+        return;
+      }
+      final status = await Permission.storage.request();
+      if (!status.isGranted) {
+        throw Exception('没有存储权限');
+      }
+    }
   }
 
   void _syncPhonePeerMeta() {

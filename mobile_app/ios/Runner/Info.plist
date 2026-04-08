@@ -49,6 +49,8 @@
 	<string>EasyChat uses the camera to scan the pairing QR code shown on your computer.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>EasyChat uses your photo library so you can send images in chat.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>EasyChat needs permission to save received images and videos to your photo library.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>EasyChat uses your local network so your phone and computer can connect directly on the same Wi-Fi.</string>
 </dict>

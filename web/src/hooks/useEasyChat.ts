@@ -6,7 +6,7 @@ import {
   type FileProgressEvent,
   type IncomingFileStart,
 } from '../lib/directTransport'
-import { getBrowserName } from '../lib/browser'
+import { getBrowserName, getDeviceInfo } from '../lib/browser'
 import { createPairingSession, subscribeToPairingSession } from '../lib/pairingClient'
 import {
   clearStoredEndpoint,
@@ -148,6 +148,7 @@ export function useEasyChat() {
           role: 'browser',
           name: getBrowserName(navigator.userAgent),
           address: `${browserIp}:${browserPort}`,
+          deviceInfo: getDeviceInfo(navigator.userAgent),
         })
       },
       onPeerMeta: ({ role, name, address }) => {
@@ -409,7 +410,11 @@ export function useEasyChat() {
     }
 
     try {
-      const data = await createPairingSession(PAIRING_API)
+      const data = await createPairingSession(
+        PAIRING_API,
+        getBrowserName(navigator.userAgent),
+        getDeviceInfo(navigator.userAgent),
+      )
       setSession(data)
       setCountdown(Math.max(0, Math.ceil((data.expiresAt - Date.now()) / 1000)))
       unsubscribePairingRef.current = subscribeToPairingSession(PAIRING_API, data.sessionId, {

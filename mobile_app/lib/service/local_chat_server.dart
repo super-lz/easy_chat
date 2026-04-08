@@ -31,11 +31,13 @@ class DirectPeerMetaPayload {
     required this.role,
     required this.name,
     required this.address,
+    this.deviceInfo,
   });
 
   final String role;
   final String name;
   final String address;
+  final String? deviceInfo;
 }
 
 class DirectFilePayload {
@@ -221,6 +223,7 @@ class LocalChatServer {
                       role: role,
                       name: name,
                       address: address,
+                      deviceInfo: payload['deviceInfo']?.toString().trim(),
                     ),
                   );
                 }
@@ -601,7 +604,11 @@ class LocalChatServer {
     );
   }
 
-  void sendPhonePeerMeta({required String name, required String address}) {
+  void sendPhonePeerMeta({
+    required String name,
+    required String address,
+    String? deviceInfo,
+  }) {
     final socket = _socket;
     if (socket == null) {
       return;
@@ -614,6 +621,8 @@ class LocalChatServer {
         'role': 'phone',
         'name': name,
         'address': address,
+        if (deviceInfo != null && deviceInfo.trim().isNotEmpty)
+          'deviceInfo': deviceInfo.trim(),
       }),
     );
   }

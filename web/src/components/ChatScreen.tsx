@@ -15,6 +15,7 @@ type ChatScreenProps = {
   draft: string
   error: string | null
   fileInputRef: RefObject<HTMLInputElement | null>
+  localDeviceInfo: string
   localDeviceName: string
   messages: Message[]
   pendingAttachments: PendingAttachment[]
@@ -43,6 +44,7 @@ export function ChatScreen({
   draft,
   error,
   fileInputRef,
+  localDeviceInfo,
   localDeviceName,
   messages,
   pendingAttachments,
@@ -81,6 +83,7 @@ export function ChatScreen({
     <section className="chat-layout">
       <ChatSidebar
         browserIp={browserIp}
+        browserDeviceInfo={localDeviceInfo}
         browserName={localDeviceName}
         browserPort={browserPort}
         connectionState={connectionState}

@@ -3,10 +3,11 @@ import 'dart:typed_data';
 import 'package:equatable/equatable.dart';
 
 class ChatMessage extends Equatable {
-  const ChatMessage({
+  ChatMessage({
     required this.id,
     required this.sender,
     required this.text,
+    int? createdAtMs,
     this.type = 'text',
     this.compositionId,
     this.batchId,
@@ -17,11 +18,12 @@ class ChatMessage extends Equatable {
     this.mimeType,
     this.progress,
     this.savedPath,
-  });
+  }) : createdAtMs = createdAtMs ?? DateTime.now().millisecondsSinceEpoch;
 
   final String id;
   final String sender;
   final String text;
+  final int createdAtMs;
   final String type;
   final String? compositionId;
   final String? batchId;
@@ -37,6 +39,7 @@ class ChatMessage extends Equatable {
     String? id,
     String? sender,
     String? text,
+    int? createdAtMs,
     String? type,
     String? compositionId,
     String? batchId,
@@ -52,6 +55,7 @@ class ChatMessage extends Equatable {
       id: id ?? this.id,
       sender: sender ?? this.sender,
       text: text ?? this.text,
+      createdAtMs: createdAtMs ?? this.createdAtMs,
       type: type ?? this.type,
       compositionId: compositionId ?? this.compositionId,
       batchId: batchId ?? this.batchId,
@@ -70,6 +74,7 @@ class ChatMessage extends Equatable {
     id,
     sender,
     text,
+    createdAtMs,
     type,
     compositionId,
     batchId,

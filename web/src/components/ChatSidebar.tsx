@@ -4,27 +4,19 @@ import type { DirectConnectionState } from '../lib/types'
 
 type ChatSidebarProps = {
   browserDeviceInfo: string
-  browserIp: string
   browserName: string
-  browserPort: string
   connectionState: DirectConnectionState
   error: string | null
-  phoneIp: string
   phoneName: string
-  phonePort: string
   onDisconnect: () => void
 }
 
 export const ChatSidebar = memo(function ChatSidebar({
   browserDeviceInfo,
-  browserIp,
   browserName,
-  browserPort,
   connectionState,
   error,
-  phoneIp,
   phoneName,
-  phonePort,
   onDisconnect,
 }: ChatSidebarProps) {
   const badgeClassName = mapConnectionBadgeClassName(connectionState.kind)
@@ -71,14 +63,6 @@ export const ChatSidebar = memo(function ChatSidebar({
             <div className="network-detail-row">
               <span>浏览器</span>
               <code>{browserName}</code>
-            </div>
-            <div className="network-detail-row">
-              <span>手机地址</span>
-              <code>{`${phoneIp}:${phonePort}`}</code>
-            </div>
-            <div className="network-detail-row">
-              <span>浏览器地址</span>
-              <code>{`${browserIp}:${browserPort}`}</code>
             </div>
             <div className="network-detail-row network-detail-row-status">
               <span>状态</span>

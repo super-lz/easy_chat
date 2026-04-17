@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 
 import '../pages/chat/chat_page.dart';
 import '../pages/confirm/confirm_page.dart';
+import '../pages/history/history_conversation_page.dart';
+import '../pages/history/history_page.dart';
 import '../pages/home/home_page.dart';
 import '../pages/scanner/scanner_page.dart';
 import 'route_paths.dart';
@@ -28,6 +30,16 @@ GoRouter createAppRouter() {
       GoRoute(
         path: RoutePaths.chat,
         builder: (context, state) => const ChatPage(),
+      ),
+      GoRoute(
+        path: RoutePaths.history,
+        builder: (context, state) => const HistoryPage(),
+      ),
+      GoRoute(
+        path: '${RoutePaths.history}/:conversationId',
+        builder: (context, state) => HistoryConversationPage(
+          conversationId: state.pathParameters['conversationId'] ?? '',
+        ),
       ),
     ],
   );

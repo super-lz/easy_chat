@@ -30,7 +30,6 @@ class _ChatPageState extends State<ChatPage> {
     final renderItems = buildChatRenderItems(
       viewData.messages,
     ).reversed.toList();
-    final phoneAddress = _buildPhoneAddress(provider);
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
@@ -38,7 +37,7 @@ class _ChatPageState extends State<ChatPage> {
       body: Column(
         children: [
           ChatHeaderSection(
-            deviceName: viewData.deviceName,
+            deviceName: viewData.targetDeviceName,
             serverStatus: viewData.serverStatus,
             isExpanded: _isHeaderExpanded,
             onToggleExpanded: _toggleHeaderExpanded,
@@ -72,8 +71,6 @@ class _ChatPageState extends State<ChatPage> {
                   deviceName: viewData.deviceName,
                   browserName: viewData.browserPeerName,
                   browserDeviceInfo: viewData.browserPeerDeviceInfo,
-                  phoneAddress: phoneAddress,
-                  browserAddress: viewData.browserPeerAddress,
                   serverStatus: viewData.serverStatus,
                   onDismiss: _collapseHeader,
                   onDisconnect: () => _confirmAndDisconnect(context),
@@ -203,15 +200,6 @@ class _ChatPageState extends State<ChatPage> {
       _isHeaderExpanded = false;
     });
   }
-
-  String _buildPhoneAddress(ChatSessionProvider provider) {
-    final ip = provider.ipController.text.trim();
-    final port = provider.portController.text.trim();
-    if (ip.isEmpty || port.isEmpty) {
-      return '未知';
-    }
-    return '$ip:$port';
-  }
 }
 
 class _HeaderOverlay extends StatelessWidget {
@@ -220,8 +208,6 @@ class _HeaderOverlay extends StatelessWidget {
     required this.deviceName,
     required this.browserName,
     required this.browserDeviceInfo,
-    required this.phoneAddress,
-    required this.browserAddress,
     required this.serverStatus,
     required this.onDismiss,
     required this.onDisconnect,
@@ -231,8 +217,6 @@ class _HeaderOverlay extends StatelessWidget {
   final String deviceName;
   final String browserName;
   final String browserDeviceInfo;
-  final String phoneAddress;
-  final String browserAddress;
   final String serverStatus;
   final VoidCallback onDismiss;
   final Future<void> Function() onDisconnect;
@@ -266,8 +250,6 @@ class _HeaderOverlay extends StatelessWidget {
                         deviceName: deviceName,
                         browserName: browserName,
                         browserDeviceInfo: browserDeviceInfo,
-                        phoneAddress: phoneAddress,
-                        browserAddress: browserAddress,
                         serverStatus: serverStatus,
                         onDisconnect: onDisconnect,
                       ),
@@ -288,19 +270,19 @@ class _ChatPageViewData {
     required this.hasCachedConnection,
     required this.messages,
     required this.deviceName,
+    required this.targetDeviceName,
     required this.serverStatus,
     required this.browserPeerName,
     required this.browserPeerDeviceInfo,
-    required this.browserPeerAddress,
   });
 
   final bool hasCachedConnection;
   final List<ChatMessage> messages;
   final String deviceName;
+  final String targetDeviceName;
   final String serverStatus;
   final String browserPeerName;
   final String browserPeerDeviceInfo;
-  final String browserPeerAddress;
 
   static _ChatPageViewData select(BuildContext context) {
     return context.select<ChatSessionProvider, _ChatPageViewData>(
@@ -308,12 +290,26 @@ class _ChatPageViewData {
         hasCachedConnection: provider.hasCachedConnection,
         messages: provider.messages,
         deviceName: provider.deviceName,
+        targetDeviceName: _resolveTargetDeviceName(provider),
         serverStatus: provider.serverStatus,
         browserPeerName: provider.browserPeerName,
         browserPeerDeviceInfo: provider.browserPeerDeviceInfo,
-        browserPeerAddress: provider.browserPeerAddress,
       ),
     );
+  }
+
+  static String _resolveTargetDeviceName(ChatSessionProvider provider) {
+    final browserDeviceInfo = provider.browserPeerDeviceInfo.trim();
+    if (browserDeviceInfo.isNotEmpty && browserDeviceInfo != '等待浏览器同步') {
+      return browserDeviceInfo;
+    }
+
+    final browserName = provider.browserPeerName.trim();
+    if (browserName.isNotEmpty && browserName != '等待浏览器同步') {
+      return browserName;
+    }
+
+    return '等待目标设备同步';
   }
 
   @override
@@ -322,10 +318,10 @@ class _ChatPageViewData {
         other.hasCachedConnection == hasCachedConnection &&
         identical(other.messages, messages) &&
         other.deviceName == deviceName &&
+        other.targetDeviceName == targetDeviceName &&
         other.serverStatus == serverStatus &&
         other.browserPeerName == browserPeerName &&
-        other.browserPeerDeviceInfo == browserPeerDeviceInfo &&
-        other.browserPeerAddress == browserPeerAddress;
+        other.browserPeerDeviceInfo == browserPeerDeviceInfo;
   }
 
   @override
@@ -333,9 +329,9 @@ class _ChatPageViewData {
     hasCachedConnection,
     messages,
     deviceName,
+    targetDeviceName,
     serverStatus,
     browserPeerName,
     browserPeerDeviceInfo,
-    browserPeerAddress,
   );
 }

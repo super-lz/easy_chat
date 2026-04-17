@@ -23,6 +23,7 @@ class FilePreviewPage extends StatefulWidget {
 
 class _FilePreviewPageState extends State<FilePreviewPage> {
   String? _resolvedPath;
+  String? _resolvedText;
   VideoPlayerController? _videoController;
   bool _videoReady = false;
   bool _immersivePreview = false;
@@ -38,9 +39,15 @@ class _FilePreviewPageState extends State<FilePreviewPage> {
 
   Future<void> _preparePreview() async {
     try {
-      final path = await context.read<ChatSessionProvider>().ensureMessageFilePath(widget.message);
+      final path = await context
+          .read<ChatSessionProvider>()
+          .ensureMessageFilePath(widget.message);
       if (!mounted) return;
       _resolvedPath = path;
+
+      if (_isTextLike(widget.message)) {
+        _resolvedText = await _tryReadTextFromPath(path);
+      }
 
       if (_isVideo) {
         final controller = VideoPlayerController.file(File(path));
@@ -76,14 +83,20 @@ class _FilePreviewPageState extends State<FilePreviewPage> {
     final darkPreview = _isImage || _isVideo;
 
     return Scaffold(
-      backgroundColor: darkPreview ? const Color(0xFF0E1318) : const Color(0xFFF4F6F8),
+      backgroundColor: darkPreview
+          ? const Color(0xFF0E1318)
+          : const Color(0xFFF4F6F8),
       appBar: _immersivePreview
           ? null
           : AppBar(
-              backgroundColor: darkPreview ? const Color(0x14000000) : Colors.transparent,
+              backgroundColor: darkPreview
+                  ? const Color(0x14000000)
+                  : Colors.transparent,
               elevation: 0,
               surfaceTintColor: Colors.transparent,
-              foregroundColor: darkPreview ? Colors.white : ChatColors.headerTitle,
+              foregroundColor: darkPreview
+                  ? Colors.white
+                  : ChatColors.headerTitle,
               titleSpacing: 0,
               title: Text(
                 message.text,
@@ -120,6 +133,7 @@ class _FilePreviewPageState extends State<FilePreviewPage> {
                   child: _PreviewBody(
                     message: message,
                     resolvedPath: _resolvedPath,
+                    resolvedText: _resolvedText,
                     videoController: _videoController,
                     videoReady: _videoReady,
                     immersivePreview: _immersivePreview,
@@ -167,6 +181,7 @@ class _PreviewBody extends StatelessWidget {
   const _PreviewBody({
     required this.message,
     required this.resolvedPath,
+    required this.resolvedText,
     required this.videoController,
     required this.videoReady,
     required this.immersivePreview,
@@ -175,6 +190,7 @@ class _PreviewBody extends StatelessWidget {
 
   final ChatMessage message;
   final String? resolvedPath;
+  final String? resolvedText;
   final VideoPlayerController? videoController;
   final bool videoReady;
   final bool immersivePreview;
@@ -183,9 +199,12 @@ class _PreviewBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mimeType = message.mimeType ?? '';
-    if (mimeType.startsWith('image/') && message.bytes != null) {
+    if (mimeType.startsWith('image/')) {
+      if (resolvedPath == null) {
+        return const _PreviewLoadingCard(label: '正在准备图片预览…');
+      }
       return _ImagePreviewCard(
-        bytes: message.bytes!,
+        imagePath: resolvedPath!,
         immersivePreview: immersivePreview,
       );
     }
@@ -201,12 +220,9 @@ class _PreviewBody extends StatelessWidget {
       );
     }
 
-    final textPreview = _tryDecodeText(message);
+    final textPreview = resolvedText ?? _tryDecodeText(message);
     if (textPreview != null) {
-      return _TextPreviewCard(
-        text: textPreview,
-        fileName: message.text,
-      );
+      return _TextPreviewCard(text: textPreview, fileName: message.text);
     }
 
     return _UnsupportedPreviewCard(
@@ -218,11 +234,11 @@ class _PreviewBody extends StatelessWidget {
 
 class _ImagePreviewCard extends StatefulWidget {
   const _ImagePreviewCard({
-    required this.bytes,
+    required this.imagePath,
     required this.immersivePreview,
   });
 
-  final Uint8List bytes;
+  final String imagePath;
   final bool immersivePreview;
 
   @override
@@ -264,10 +280,7 @@ class _ImagePreviewCardState extends State<_ImagePreviewCard> {
           transformationController: _controller,
           minScale: 0.8,
           maxScale: 4,
-          child: Image.memory(
-            widget.bytes,
-            fit: BoxFit.contain,
-          ),
+          child: Image.file(File(widget.imagePath), fit: BoxFit.contain),
         ),
       ),
     );
@@ -328,7 +341,9 @@ class _PreviewBottomBar extends StatelessWidget {
                 child: FilledButton.icon(
                   onPressed: onPrimaryAction,
                   icon: Icon(
-                    isGalleryAsset ? Icons.photo_library_outlined : Icons.download_rounded,
+                    isGalleryAsset
+                        ? Icons.photo_library_outlined
+                        : Icons.download_rounded,
                     size: 18,
                   ),
                   label: Text(isGalleryAsset ? '保存到相册' : '另存为'),
@@ -389,7 +404,10 @@ class _VideoPreviewCardState extends State<_VideoPreviewCard> {
     final controller = widget.controller;
     final isPlaying = controller.value.isPlaying;
     final durationMs = controller.value.duration.inMilliseconds;
-    final positionMs = controller.value.position.inMilliseconds.clamp(0, durationMs == 0 ? 0 : durationMs);
+    final positionMs = controller.value.position.inMilliseconds.clamp(
+      0,
+      durationMs == 0 ? 0 : durationMs,
+    );
     final isMuted = controller.value.volume == 0;
 
     return ClipRRect(
@@ -398,7 +416,9 @@ class _VideoPreviewCardState extends State<_VideoPreviewCard> {
         alignment: Alignment.center,
         children: [
           AspectRatio(
-            aspectRatio: controller.value.aspectRatio == 0 ? 16 / 9 : controller.value.aspectRatio,
+            aspectRatio: controller.value.aspectRatio == 0
+                ? 16 / 9
+                : controller.value.aspectRatio,
             child: VideoPlayer(controller),
           ),
           Positioned.fill(
@@ -450,16 +470,27 @@ class _VideoPreviewCardState extends State<_VideoPreviewCard> {
                   SliderTheme(
                     data: SliderTheme.of(context).copyWith(
                       trackHeight: 3,
-                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                      overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 6,
+                      ),
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 12,
+                      ),
                     ),
                     child: Slider(
-                      value: durationMs == 0 ? 0 : positionMs.toDouble().clamp(0, durationMs.toDouble()),
+                      value: durationMs == 0
+                          ? 0
+                          : positionMs.toDouble().clamp(
+                              0,
+                              durationMs.toDouble(),
+                            ),
                       max: durationMs == 0 ? 1 : durationMs.toDouble(),
                       activeColor: Colors.white,
                       inactiveColor: const Color(0x40FFFFFF),
                       onChanged: (value) async {
-                        await controller.seekTo(Duration(milliseconds: value.round()));
+                        await controller.seekTo(
+                          Duration(milliseconds: value.round()),
+                        );
                       },
                     ),
                   ),
@@ -474,7 +505,9 @@ class _VideoPreviewCardState extends State<_VideoPreviewCard> {
                           }
                         },
                         icon: Icon(
-                          isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                          isPlaying
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
                           color: Colors.white,
                         ),
                       ),
@@ -483,7 +516,9 @@ class _VideoPreviewCardState extends State<_VideoPreviewCard> {
                           await controller.setVolume(isMuted ? 1 : 0);
                         },
                         icon: Icon(
-                          isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                          isMuted
+                              ? Icons.volume_off_rounded
+                              : Icons.volume_up_rounded,
                           color: Colors.white,
                         ),
                       ),
@@ -519,10 +554,7 @@ class _VideoPreviewCardState extends State<_VideoPreviewCard> {
 }
 
 class _TextPreviewCard extends StatelessWidget {
-  const _TextPreviewCard({
-    required this.text,
-    required this.fileName,
-  });
+  const _TextPreviewCard({required this.text, required this.fileName});
 
   final String text;
   final String fileName;
@@ -652,8 +684,12 @@ class _UnsupportedPreviewCard extends StatelessWidget {
           const SizedBox(height: 20),
           _InfoLine(label: '文件名', value: message.text),
           _InfoLine(label: '类型', value: message.mimeType ?? '未知'),
-          _InfoLine(label: '大小', value: _displayFileSize(message, resolvedPath)),
-          if (message.meta != null) _InfoLine(label: '状态', value: message.meta!),
+          _InfoLine(
+            label: '大小',
+            value: _displayFileSize(message, resolvedPath),
+          ),
+          if (message.meta != null)
+            _InfoLine(label: '状态', value: message.meta!),
         ],
       ),
     );
@@ -695,10 +731,7 @@ class _PreviewLoadingCard extends StatelessWidget {
 }
 
 class _InfoLine extends StatelessWidget {
-  const _InfoLine({
-    required this.label,
-    required this.value,
-  });
+  const _InfoLine({required this.label, required this.value});
 
   final String label;
   final String value;
@@ -741,7 +774,8 @@ class _InfoLine extends StatelessWidget {
 
 String? _tryDecodeText(ChatMessage message) {
   final mimeType = message.mimeType ?? '';
-  final isTextLike = mimeType.startsWith('text/') ||
+  final isTextLike =
+      mimeType.startsWith('text/') ||
       mimeType == 'application/json' ||
       mimeType == 'application/xml' ||
       mimeType == 'text/markdown';
@@ -750,6 +784,22 @@ String? _tryDecodeText(ChatMessage message) {
   }
   try {
     return utf8.decode(message.bytes!);
+  } catch (_) {
+    return null;
+  }
+}
+
+bool _isTextLike(ChatMessage message) {
+  final mimeType = message.mimeType ?? '';
+  return mimeType.startsWith('text/') ||
+      mimeType == 'application/json' ||
+      mimeType == 'application/xml' ||
+      mimeType == 'text/markdown';
+}
+
+Future<String?> _tryReadTextFromPath(String path) async {
+  try {
+    return await File(path).readAsString();
   } catch (_) {
     return null;
   }
@@ -787,11 +837,16 @@ String _formatDuration(Duration duration) {
 
 String _fileKindLabel(String fileName) {
   final dot = fileName.lastIndexOf('.');
-  final extension = dot == -1 ? 'FILE' : fileName.substring(dot + 1).toUpperCase();
+  final extension = dot == -1
+      ? 'FILE'
+      : fileName.substring(dot + 1).toUpperCase();
   return extension.substring(0, math.min(extension.length, 4));
 }
 
-Future<void> _handlePrimaryAction(BuildContext context, ChatMessage message) async {
+Future<void> _handlePrimaryAction(
+  BuildContext context,
+  ChatMessage message,
+) async {
   final provider = context.read<ChatSessionProvider>();
   try {
     _showPreviewFeedback(context, '正在处理文件…');
@@ -810,7 +865,10 @@ Future<void> _handlePrimaryAction(BuildContext context, ChatMessage message) asy
   }
 }
 
-Future<void> _handleSecondaryAction(BuildContext context, ChatMessage message) async {
+Future<void> _handleSecondaryAction(
+  BuildContext context,
+  ChatMessage message,
+) async {
   final provider = context.read<ChatSessionProvider>();
   try {
     _showPreviewFeedback(context, '正在打开分享…');
@@ -827,7 +885,10 @@ Future<void> _handleSecondaryAction(BuildContext context, ChatMessage message) a
   }
 }
 
-Future<void> _showPreviewActions(BuildContext context, ChatMessage message) async {
+Future<void> _showPreviewActions(
+  BuildContext context,
+  ChatMessage message,
+) async {
   final provider = context.read<ChatSessionProvider>();
   final isGalleryAsset = _isGalleryAsset(message);
 
@@ -890,20 +951,24 @@ Future<void> _showPreviewActions(BuildContext context, ChatMessage message) asyn
                 icon: Icons.ios_share_rounded,
                 title: '分享文件',
                 subtitle: '发送到其他 App 或系统分享面板',
-                onTap: () => runAction(() => provider.shareFileMessage(message)),
+                onTap: () =>
+                    runAction(() => provider.shareFileMessage(message)),
               ),
               if (isGalleryAsset)
                 _PreviewActionTile(
                   icon: Icons.photo_library_outlined,
                   title: '保存到相册',
                   subtitle: '适用于图片和视频',
-                  onTap: () => runAction(() => provider.saveFileMessageToGallery(message)),
+                  onTap: () => runAction(
+                    () => provider.saveFileMessageToGallery(message),
+                  ),
                 ),
               _PreviewActionTile(
                 icon: Icons.folder_open_rounded,
                 title: '另存为',
                 subtitle: '选择一个你方便访问的位置',
-                onTap: () => runAction(() => provider.exportFileMessage(message)),
+                onTap: () =>
+                    runAction(() => provider.exportFileMessage(message)),
               ),
             ],
           ),
@@ -918,7 +983,11 @@ bool _isGalleryAsset(ChatMessage message) {
   return mimeType.startsWith('image/') || mimeType.startsWith('video/');
 }
 
-void _showPreviewFeedback(BuildContext context, String message, {bool isError = false}) {
+void _showPreviewFeedback(
+  BuildContext context,
+  String message, {
+  bool isError = false,
+}) {
   final messenger = ScaffoldMessenger.of(context);
   messenger
     ..hideCurrentSnackBar()
@@ -926,7 +995,9 @@ void _showPreviewFeedback(BuildContext context, String message, {bool isError = 
       SnackBar(
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        backgroundColor: isError ? const Color(0xFF7B4C42) : const Color(0xFF22313F),
+        backgroundColor: isError
+            ? const Color(0xFF7B4C42)
+            : const Color(0xFF22313F),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         content: Text(
           message,

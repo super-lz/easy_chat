@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PAIRING_DIR="$ROOT_DIR/pairing_service"
 WEB_DIR="$ROOT_DIR/web"
+NODE_RUNNER="$ROOT_DIR/scripts/with-project-node.sh"
 PAIRING_PORT="${PORT:-8787}"
 WEB_PORT="${WEB_PORT:-5173}"
 
@@ -42,15 +43,13 @@ fi
 
 echo "[easychat] starting pairing_service"
 (
-  cd "$PAIRING_DIR"
-  node server.js
+  "$NODE_RUNNER" npm --prefix "$PAIRING_DIR" run dev
 ) &
 pairing_pid=$!
 
 echo "[easychat] starting web"
 (
-  cd "$WEB_DIR"
-  npm run dev -- --host 0.0.0.0
+  "$NODE_RUNNER" npm --prefix "$WEB_DIR" run dev -- --host 0.0.0.0
 ) &
 web_pid=$!
 

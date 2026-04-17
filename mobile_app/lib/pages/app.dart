@@ -7,6 +7,7 @@ import '../common/app_constants.dart';
 import '../provider/chat_session_provider.dart';
 import '../route/app_router.dart';
 import '../route/route_paths.dart';
+import '../service/chat_history_store.dart';
 import '../theme/app_theme.dart';
 
 class App extends StatelessWidget {
@@ -26,6 +27,7 @@ class _AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
+  late final ChatHistoryStore _chatHistoryStore;
   late final ChatSessionProvider _provider;
   late final _router = createAppRouter();
 
@@ -33,7 +35,8 @@ class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _provider = ChatSessionProvider();
+    _chatHistoryStore = ChatHistoryStore();
+    _provider = ChatSessionProvider(chatHistoryStore: _chatHistoryStore);
     unawaited(_bootstrapConnection());
   }
 
@@ -75,6 +78,7 @@ class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
   }
 
   List<SingleChildWidget> get _globalProviders => [
+    Provider<ChatHistoryStore>.value(value: _chatHistoryStore),
     ChangeNotifierProvider<ChatSessionProvider>.value(value: _provider),
   ];
 }

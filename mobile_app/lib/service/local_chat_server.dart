@@ -672,6 +672,8 @@ class LocalChatServer {
     _socket = null;
     await _server?.close(force: true);
     _server = null;
+    _incomingFiles.clear();
+    _outgoingFiles.clear();
     onStatusChanged('Direct server offline');
   }
 }

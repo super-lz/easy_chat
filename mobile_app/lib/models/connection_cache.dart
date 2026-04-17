@@ -6,33 +6,38 @@ class ConnectionCache extends Equatable {
     required this.phoneIp,
     required this.phonePort,
     required this.token,
+    this.conversationId,
   });
 
   final String deviceName;
   final String phoneIp;
   final int phonePort;
   final String token;
+  final String? conversationId;
 
   ConnectionCache copyWith({
     String? deviceName,
     String? phoneIp,
     int? phonePort,
     String? token,
+    String? conversationId,
   }) {
     return ConnectionCache(
       deviceName: deviceName ?? this.deviceName,
       phoneIp: phoneIp ?? this.phoneIp,
       phonePort: phonePort ?? this.phonePort,
       token: token ?? this.token,
+      conversationId: conversationId ?? this.conversationId,
     );
   }
 
-  Map<String, Object> toJson() {
+  Map<String, Object?> toJson() {
     return {
       'deviceName': deviceName,
       'phoneIp': phoneIp,
       'phonePort': phonePort,
       'token': token,
+      'conversationId': conversationId,
     };
   }
 
@@ -44,14 +49,16 @@ class ConnectionCache extends Equatable {
           ? json['phonePort'] as int
           : int.parse(json['phonePort'].toString()),
       token: json['token']?.toString() ?? '',
+      conversationId: json['conversationId']?.toString(),
     );
   }
 
   @override
   List<Object?> get props => [
-        deviceName,
-        phoneIp,
-        phonePort,
-        token,
-      ];
+    deviceName,
+    phoneIp,
+    phonePort,
+    token,
+    conversationId,
+  ];
 }

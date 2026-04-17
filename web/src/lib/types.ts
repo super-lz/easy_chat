@@ -85,7 +85,7 @@ export type DirectPayload =
       sender?: 'phone' | 'browser'
       role?: 'phone' | 'browser'
       name: string
-      address: string
+      address?: string
       deviceInfo?: string
     }
   | {

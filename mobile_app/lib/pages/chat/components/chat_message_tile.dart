@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -205,6 +206,10 @@ class _FileCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isImage = message.mimeType?.startsWith('image/') ?? false;
+    final previewImage =
+        isImage &&
+        message.savedPath != null &&
+        File(message.savedPath!).existsSync();
 
     return GestureDetector(
       onTap: () {
@@ -226,97 +231,97 @@ class _FileCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-          if (isImage && message.bytes != null) ...[
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: Image.memory(
-                message.bytes!,
-                height: 156,
-                width: double.infinity,
-                fit: BoxFit.cover,
+            if (previewImage) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Image.file(
+                  File(message.savedPath!),
+                  height: 156,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-          ],
-          if (!isImage || message.bytes == null)
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: isPhone
-                        ? ChatColors.outgoingFileTypeBackground
-                        : ChatColors.incomingFileTypeBackground,
-                    borderRadius: BorderRadius.circular(11),
-                  ),
-                  child: Text(
-                    _fileKindLabel(message.text),
-                    style: TextStyle(
+              const SizedBox(height: 10),
+            ],
+            if (!previewImage)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
                       color: isPhone
-                          ? Colors.white
-                          : ChatColors.incomingFileTypeText,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
+                          ? ChatColors.outgoingFileTypeBackground
+                          : ChatColors.incomingFileTypeBackground,
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                    child: Text(
+                      _fileKindLabel(message.text),
+                      style: TextStyle(
+                        color: isPhone
+                            ? Colors.white
+                            : ChatColors.incomingFileTypeText,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    message.text,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: isPhone ? Colors.white : ChatColors.messageText,
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w700,
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      message.text,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: isPhone ? Colors.white : ChatColors.messageText,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                ),
-              ],
-            )
-          else
-            Text(
-              message.text,
-              style: TextStyle(
-                color: isPhone ? Colors.white : ChatColors.messageText,
-                fontSize: 13.5,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          if (message.meta != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              message.meta!,
-              style: TextStyle(
-                color: isPhone
-                    ? ChatColors.outgoingMetaText
-                    : ChatColors.incomingMetaText,
-                fontSize: 11.5,
-              ),
-            ),
-          ],
-          if (message.progress != null && message.progress! < 1) ...[
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: LinearProgressIndicator(
-                value: message.progress,
-                minHeight: 6,
-                backgroundColor: isPhone
-                    ? ChatColors.outgoingProgressBackground
-                    : ChatColors.incomingProgressBackground,
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  isPhone
-                      ? ChatColors.outgoingProgressValue
-                      : ChatColors.incomingProgressValue,
+                ],
+              )
+            else
+              Text(
+                message.text,
+                style: TextStyle(
+                  color: isPhone ? Colors.white : ChatColors.messageText,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-            ),
-          ],
+            if (message.meta != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                message.meta!,
+                style: TextStyle(
+                  color: isPhone
+                      ? ChatColors.outgoingMetaText
+                      : ChatColors.incomingMetaText,
+                  fontSize: 11.5,
+                ),
+              ),
+            ],
+            if (message.progress != null && message.progress! < 1) ...[
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  value: message.progress,
+                  minHeight: 6,
+                  backgroundColor: isPhone
+                      ? ChatColors.outgoingProgressBackground
+                      : ChatColors.incomingProgressBackground,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    isPhone
+                        ? ChatColors.outgoingProgressValue
+                        : ChatColors.incomingProgressValue,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -336,8 +341,7 @@ class _BatchSaveActionsButton extends StatelessWidget {
 }
 
 class _ActionMenuButton extends StatelessWidget {
-  const _ActionMenuButton.batch({required this.files})
-    : message = null;
+  const _ActionMenuButton.batch({required this.files}) : message = null;
 
   final ChatMessage? message;
   final List<ChatMessage>? files;
@@ -441,7 +445,9 @@ class _ActionMenuButton extends StatelessWidget {
                   _SheetActionTile(
                     icon: Icons.photo_library_outlined,
                     title: targetFiles.length == 1 ? '保存到相册' : '全部保存到相册',
-                    subtitle: targetFiles.length == 1 ? '适用于图片和视频' : '将图片和视频批量保存到系统相册',
+                    subtitle: targetFiles.length == 1
+                        ? '适用于图片和视频'
+                        : '将图片和视频批量保存到系统相册',
                     onTap: () => runAction(
                       () => targetFiles.length == 1
                           ? provider.saveFileMessageToGallery(targetFiles.first)
@@ -451,7 +457,9 @@ class _ActionMenuButton extends StatelessWidget {
                 _SheetActionTile(
                   icon: Icons.folder_open_rounded,
                   title: targetFiles.length == 1 ? '另存为' : '批量保存到文件夹',
-                  subtitle: targetFiles.length == 1 ? '选择一个你方便访问的位置' : '选择目录后逐个导出文件',
+                  subtitle: targetFiles.length == 1
+                      ? '选择一个你方便访问的位置'
+                      : '选择目录后逐个导出文件',
                   onTap: () => runAction(
                     () => targetFiles.length == 1
                         ? provider.exportFileMessage(targetFiles.first)
@@ -463,7 +471,9 @@ class _ActionMenuButton extends StatelessWidget {
                     icon: Icons.archive_outlined,
                     title: '压缩保存',
                     subtitle: '打包成一个 ZIP 文件后再导出',
-                    onTap: () => runAction(() => provider.saveFileMessagesAsZip(targetFiles)),
+                    onTap: () => runAction(
+                      () => provider.saveFileMessagesAsZip(targetFiles),
+                    ),
                   ),
                 const SizedBox(height: 8),
               ],
@@ -475,7 +485,10 @@ class _ActionMenuButton extends StatelessWidget {
   }
 }
 
-Future<void> _showSingleFileActions(BuildContext context, ChatMessage message) async {
+Future<void> _showSingleFileActions(
+  BuildContext context,
+  ChatMessage message,
+) async {
   final provider = context.read<ChatSessionProvider>();
   final isGalleryAsset = _isGallerySavable(message);
 
@@ -547,20 +560,24 @@ Future<void> _showSingleFileActions(BuildContext context, ChatMessage message) a
                 icon: Icons.ios_share_rounded,
                 title: '分享文件',
                 subtitle: '发送到其他 App 或系统分享面板',
-                onTap: () => runAction(() => provider.shareFileMessage(message)),
+                onTap: () =>
+                    runAction(() => provider.shareFileMessage(message)),
               ),
               if (isGalleryAsset)
                 _SheetActionTile(
                   icon: Icons.photo_library_outlined,
                   title: '保存到相册',
                   subtitle: '适用于图片和视频',
-                  onTap: () => runAction(() => provider.saveFileMessageToGallery(message)),
+                  onTap: () => runAction(
+                    () => provider.saveFileMessageToGallery(message),
+                  ),
                 ),
               _SheetActionTile(
                 icon: Icons.folder_open_rounded,
                 title: '另存为',
                 subtitle: '选择一个你方便访问的位置',
-                onTap: () => runAction(() => provider.exportFileMessage(message)),
+                onTap: () =>
+                    runAction(() => provider.exportFileMessage(message)),
               ),
               const SizedBox(height: 8),
             ],
@@ -576,7 +593,11 @@ bool _isGallerySavable(ChatMessage message) {
   return mimeType.startsWith('image/') || mimeType.startsWith('video/');
 }
 
-void _showActionFeedback(BuildContext context, String message, {bool isError = false}) {
+void _showActionFeedback(
+  BuildContext context,
+  String message, {
+  bool isError = false,
+}) {
   final messenger = ScaffoldMessenger.of(context);
   messenger
     ..hideCurrentSnackBar()
@@ -584,12 +605,16 @@ void _showActionFeedback(BuildContext context, String message, {bool isError = f
       SnackBar(
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        backgroundColor: isError ? const Color(0xFF7B4C42) : const Color(0xFF22313F),
+        backgroundColor: isError
+            ? const Color(0xFF7B4C42)
+            : const Color(0xFF22313F),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         content: Row(
           children: [
             Icon(
-              isError ? Icons.error_outline_rounded : Icons.check_circle_outline_rounded,
+              isError
+                  ? Icons.error_outline_rounded
+                  : Icons.check_circle_outline_rounded,
               color: Colors.white,
               size: 18,
             ),

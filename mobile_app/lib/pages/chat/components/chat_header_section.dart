@@ -82,8 +82,6 @@ class ChatHeaderOverlayPanel extends StatelessWidget {
     required this.deviceName,
     required this.browserName,
     required this.browserDeviceInfo,
-    required this.phoneAddress,
-    required this.browserAddress,
     required this.serverStatus,
     required this.onDisconnect,
   });
@@ -91,8 +89,6 @@ class ChatHeaderOverlayPanel extends StatelessWidget {
   final String deviceName;
   final String browserName;
   final String browserDeviceInfo;
-  final String phoneAddress;
-  final String browserAddress;
   final String serverStatus;
   final Future<void> Function() onDisconnect;
 
@@ -119,18 +115,6 @@ class ChatHeaderOverlayPanel extends StatelessWidget {
               _InfoRow(label: '手机', value: deviceName),
               _InfoRow(label: '浏览器设备', value: browserDeviceInfo),
               _InfoRow(label: '浏览器', value: browserName),
-              _InfoRow(
-                label: '手机地址',
-                value: phoneAddress,
-                compactValue: true,
-                multilineValue: true,
-              ),
-              _InfoRow(
-                label: '浏览器地址',
-                value: browserAddress,
-                compactValue: true,
-                multilineValue: true,
-              ),
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 child: Row(
@@ -185,26 +169,17 @@ class ChatHeaderOverlayPanel extends StatelessWidget {
 }
 
 class _InfoRow extends StatelessWidget {
-  const _InfoRow({
-    required this.label,
-    required this.value,
-    this.compactValue = false,
-    this.multilineValue = false,
-  });
+  const _InfoRow({required this.label, required this.value});
 
   final String label;
   final String value;
-  final bool compactValue;
-  final bool multilineValue;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 11),
       child: Row(
-        crossAxisAlignment: multilineValue
-            ? CrossAxisAlignment.start
-            : CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Text(
             label,
@@ -221,17 +196,14 @@ class _InfoRow extends StatelessWidget {
               child: Text(
                 value,
                 textAlign: TextAlign.right,
-                maxLines: multilineValue ? 2 : 1,
-                softWrap: multilineValue,
-                overflow: multilineValue
-                    ? TextOverflow.visible
-                    : TextOverflow.ellipsis,
-                style: TextStyle(
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
                   color: ChatColors.headerMetaValue,
-                  fontSize: compactValue ? 15.5 : 17.5,
+                  fontSize: 17.5,
                   fontWeight: FontWeight.w600,
-                  letterSpacing: compactValue ? 0 : 0.2,
-                  height: compactValue ? 1.25 : 1.2,
+                  letterSpacing: 0.2,
+                  height: 1.2,
                 ),
               ),
             ),

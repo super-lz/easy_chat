@@ -3,4 +3,9 @@ class RoutePaths {
   static const scan = '/scan';
   static const confirm = '/confirm';
   static const chat = '/chat';
+  static const history = '/history';
+
+  static String historyConversation(String conversationId) {
+    return '$history/$conversationId';
+  }
 }

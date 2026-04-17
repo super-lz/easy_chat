@@ -83,7 +83,7 @@ export function useEasyChat() {
   const [messages, setMessages] = useState<Message[]>(initialMessages)
   const [session, setSession] = useState<PairingSession | null>(null)
   const [endpoint, setEndpoint] = useState<PhoneEndpoint | null>(bootstrapState.endpoint)
-  const [peerPhoneMeta, setPeerPhoneMeta] = useState<{ name: string; address: string } | null>(null)
+  const [peerPhoneMeta, setPeerPhoneMeta] = useState<{ name: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(bootstrapState.isLoading)
   const [connectionState, setConnectionState] = useState<DirectConnectionState>(bootstrapState.connectionState)
@@ -104,7 +104,6 @@ export function useEasyChat() {
   }, [phase])
 
   const conversationTitle = peerPhoneMeta?.name ?? endpoint?.deviceName ?? '我的手机'
-  const connectionAddress = peerPhoneMeta?.address ?? (endpoint ? `${endpoint.phoneIp}:${endpoint.phonePort}` : '等待手机共享地址')
   const canCompose = phase === 'chat'
   const canSend = canCompose && (draft.trim().length > 0 || pendingAttachments.length > 0)
   const visibleMessages = useMemo(
@@ -138,24 +137,20 @@ export function useEasyChat() {
             id: createLocalId('system-open'),
             sender: 'system',
             type: 'text',
-            content: `已连接到 ${nextEndpoint.phoneIp}:${nextEndpoint.phonePort}`,
+            content: '局域网直连已建立',
           },
         ])
-        const location = window.location
-        const browserIp = location.hostname || '未知'
-        const browserPort = location.port || (location.protocol === 'https:' ? '443' : '80')
         transportRef.current?.sendPeerMeta({
           role: 'browser',
           name: getBrowserName(navigator.userAgent),
-          address: `${browserIp}:${browserPort}`,
           deviceInfo: getDeviceInfo(navigator.userAgent),
         })
       },
-      onPeerMeta: ({ role, name, address }) => {
+      onPeerMeta: ({ role, name }) => {
         if (role !== 'phone') {
           return
         }
-        setPeerPhoneMeta({ name, address })
+        setPeerPhoneMeta({ name })
       },
       onTextMessage: ({ text, compositionId }) => {
         setMessages((current) => [
@@ -576,7 +571,6 @@ export function useEasyChat() {
   return {
     canCompose,
     canSend,
-    connectionAddress,
     connectionState,
     conversationTitle,
     countdown,

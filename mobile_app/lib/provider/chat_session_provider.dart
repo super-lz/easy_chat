@@ -18,6 +18,7 @@ import '../models/connection_cache.dart';
 import '../models/initial_messages.dart';
 import '../models/pending_attachment.dart';
 import '../models/pairing_payload.dart';
+import '../service/chat_history_store.dart';
 import '../service/connection_persistence.dart';
 import '../service/local_chat_server.dart';
 import '../service/managed_file_store.dart';
@@ -26,12 +27,16 @@ import '../utils/app_error_formatter.dart';
 import '../utils/network_tools.dart';
 
 class ChatSessionProvider extends ChangeNotifier {
+  static const int _maxRetainedMessages = 400;
+
   ChatSessionProvider({
     ConnectionPersistence? persistence,
+    ChatHistoryStore? chatHistoryStore,
     LocalChatServer? chatServer,
     PairingApiService? pairingApiService,
     ManagedFileStore? managedFileStore,
   }) : _persistence = persistence ?? ConnectionPersistence(),
+       _chatHistoryStore = chatHistoryStore ?? ChatHistoryStore(),
        _pairingApiService = pairingApiService ?? const PairingApiService(),
        _managedFileStore = managedFileStore ?? ManagedFileStore(),
        _chatServer =
@@ -63,6 +68,7 @@ class ChatSessionProvider extends ChangeNotifier {
   final List<ChatMessage> _messages = List<ChatMessage>.from(initialMessages);
   final List<PendingAttachment> _pendingAttachments = [];
   final ConnectionPersistence _persistence;
+  final ChatHistoryStore _chatHistoryStore;
   final PairingApiService _pairingApiService;
   final ManagedFileStore _managedFileStore;
   final LocalChatServer _chatServer;
@@ -71,6 +77,7 @@ class ChatSessionProvider extends ChangeNotifier {
   String? _registrationError;
   String _serverStatus = '未启动';
   String? _directToken;
+  String? _conversationId;
   bool _isRegistering = false;
   bool _hasCachedConnection = false;
   String? _browserPeerName;
@@ -154,14 +161,14 @@ class ChatSessionProvider extends ChangeNotifier {
 
   void _bindServerCallbacks() {
     _chatServer.onBrowserMessage = (payload) {
-      _messages.add(
-        ChatMessage(
-          id: 'msg-${DateTime.now().millisecondsSinceEpoch}',
-          sender: 'browser',
-          text: payload.text,
-          compositionId: payload.compositionId,
-        ),
+      final message = ChatMessage(
+        id: 'msg-${DateTime.now().millisecondsSinceEpoch}',
+        sender: 'browser',
+        text: payload.text,
+        compositionId: payload.compositionId,
       );
+      _appendMessage(message);
+      unawaited(_chatHistoryStore.appendMessage(message));
       _safeNotify();
     };
 
@@ -177,6 +184,7 @@ class ChatSessionProvider extends ChangeNotifier {
         if (nextDeviceInfo != null && nextDeviceInfo.isNotEmpty) {
           _browserPeerDeviceInfo = nextDeviceInfo;
         }
+        unawaited(_syncConversationMeta());
         _safeNotify();
       }
     };
@@ -195,6 +203,7 @@ class ChatSessionProvider extends ChangeNotifier {
         meta: '$sizePart • 已发送',
         progress: 1,
       );
+      unawaited(_chatHistoryStore.upsertMessage(_messages[index]));
       _safeNotify();
     };
 
@@ -229,13 +238,13 @@ class ChatSessionProvider extends ChangeNotifier {
     ipController.text = localIp ?? cached.phoneIp;
     portController.text = cached.phonePort.toString();
     _directToken = cached.token;
+    _conversationId = cached.conversationId;
 
     try {
+      await _restoreCachedConversation();
       await _chatServer.start(port: cached.phonePort, token: cached.token);
       _hasCachedConnection = true;
-      _messages
-        ..clear()
-        ..addAll(initialMessages);
+      await _syncConversationMeta();
       _safeNotify();
       return true;
     } catch (_) {
@@ -259,6 +268,8 @@ class ChatSessionProvider extends ChangeNotifier {
     }
 
     try {
+      _conversationId = cached.conversationId;
+      await _restoreCachedConversation();
       await _chatServer.start(port: cached.phonePort, token: cached.token);
       _directToken = cached.token;
       _hasCachedConnection = true;
@@ -354,11 +365,20 @@ class ChatSessionProvider extends ChangeNotifier {
         return false;
       }
 
+      final conversationId = await _chatHistoryStore.createConversation(
+        localDeviceName: deviceController.text.trim(),
+        localAddress: _buildLocalAddress(phoneIp, port),
+        peerName: pairingPayload.browserName,
+        peerDeviceInfo: pairingPayload.deviceInfo,
+      );
+      _conversationId = conversationId;
+
       final cache = ConnectionCache(
         deviceName: deviceController.text.trim(),
         phoneIp: phoneIp,
         phonePort: port,
         token: token,
+        conversationId: conversationId,
       );
       await _persistence.save(cache);
 
@@ -367,6 +387,7 @@ class ChatSessionProvider extends ChangeNotifier {
       _messages
         ..clear()
         ..addAll(initialMessages);
+      await _syncConversationMeta();
       _safeNotify();
       return true;
     } catch (error) {
@@ -399,6 +420,7 @@ class ChatSessionProvider extends ChangeNotifier {
     _isRegistering = false;
     _registrationError = null;
     _directToken = null;
+    _conversationId = null;
     _hasCachedConnection = false;
     _browserPeerName = null;
     _browserPeerAddress = null;
@@ -406,6 +428,7 @@ class ChatSessionProvider extends ChangeNotifier {
     _pairingPayload = null;
     _pendingAttachments.clear();
     await _chatServer.stop();
+    await _chatHistoryStore.closeActiveConversation();
     _messages
       ..clear()
       ..addAll(initialMessages);
@@ -418,8 +441,10 @@ class ChatSessionProvider extends ChangeNotifier {
     }
     await _chatServer.stop();
     await _persistence.clear();
+    await _chatHistoryStore.closeActiveConversation();
     _hasCachedConnection = false;
     _directToken = null;
+    _conversationId = null;
     _browserPeerName = null;
     _browserPeerAddress = null;
     _browserPeerDeviceInfo = null;
@@ -457,22 +482,21 @@ class ChatSessionProvider extends ChangeNotifier {
           bucket: 'outgoing',
         );
 
-        _messages.add(
-          ChatMessage(
-            id: transferId,
-            sender: 'phone',
-            text: attachment.name,
-            type: 'file',
-            compositionId: compositionId,
-            batchId: batchId,
-            batchTotal: batchTotal,
-            meta: '${_formatBytes(attachment.size)} • 0%',
-            bytes: attachment.bytes,
-            mimeType: attachment.mimeType,
-            progress: 0,
-            savedPath: storedPath,
-          ),
+        final message = ChatMessage(
+          id: transferId,
+          sender: 'phone',
+          text: attachment.name,
+          type: 'file',
+          compositionId: compositionId,
+          batchId: batchId,
+          batchTotal: batchTotal,
+          meta: '${_formatBytes(attachment.size)} • 0%',
+          mimeType: attachment.mimeType,
+          progress: 0,
+          savedPath: storedPath,
         );
+        _appendMessage(message, trimIfNeeded: false);
+        unawaited(_chatHistoryStore.appendMessage(message));
 
         _chatServer.sendPhoneFile(
           transferId: transferId,
@@ -488,14 +512,14 @@ class ChatSessionProvider extends ChangeNotifier {
     }
 
     if (text.isNotEmpty) {
-      _messages.add(
-        ChatMessage(
-          id: 'msg-${DateTime.now().millisecondsSinceEpoch}',
-          sender: 'phone',
-          text: text,
-          compositionId: compositionId,
-        ),
+      final message = ChatMessage(
+        id: 'msg-${DateTime.now().millisecondsSinceEpoch}',
+        sender: 'phone',
+        text: text,
+        compositionId: compositionId,
       );
+      _appendMessage(message);
+      unawaited(_chatHistoryStore.appendMessage(message));
       _chatServer.sendPhoneMessage(text, compositionId: compositionId);
     }
 
@@ -619,22 +643,21 @@ class ChatSessionProvider extends ChangeNotifier {
   Future<void> _handleReceivedFile(DirectFilePayload file) async {
     final savedPath = await _saveReceivedFile(file);
     _replaceTransferProgress(file.transferId, 1);
-    _messages.add(
-      ChatMessage(
-        id: 'received-${file.transferId}',
-        sender: 'browser',
-        text: file.name,
-        type: 'file',
-        compositionId: file.compositionId,
-        batchId: file.batchId,
-        batchTotal: file.batchTotal,
-        meta: '${_formatBytes(file.size)} • 已保存',
-        bytes: file.bytes,
-        mimeType: file.mimeType,
-        progress: 1,
-        savedPath: savedPath,
-      ),
+    final message = ChatMessage(
+      id: 'received-${file.transferId}',
+      sender: 'browser',
+      text: file.name,
+      type: 'file',
+      compositionId: file.compositionId,
+      batchId: file.batchId,
+      batchTotal: file.batchTotal,
+      meta: '${_formatBytes(file.size)} • 已保存',
+      mimeType: file.mimeType,
+      progress: 1,
+      savedPath: savedPath,
     );
+    _appendMessage(message);
+    unawaited(_chatHistoryStore.appendMessage(message));
     _safeNotify();
   }
 
@@ -648,6 +671,83 @@ class ChatSessionProvider extends ChangeNotifier {
     } catch (_) {
       return null;
     }
+  }
+
+  void _appendMessage(ChatMessage message, {bool trimIfNeeded = true}) {
+    _messages.add(message);
+    if (trimIfNeeded) {
+      _trimRetainedMessages();
+    }
+  }
+
+  Future<void> _restoreCachedConversation() async {
+    final conversationId = _conversationId;
+    if (conversationId == null || conversationId.isEmpty) {
+      _messages
+        ..clear()
+        ..addAll(initialMessages);
+      await _chatHistoryStore.closeActiveConversation();
+      return;
+    }
+
+    await _chatHistoryStore.openConversation(conversationId);
+    final messages = await _chatHistoryStore.loadRecentMessages(
+      conversationId,
+      limit: _maxRetainedMessages,
+    );
+    _messages
+      ..clear()
+      ..addAll(messages);
+  }
+
+  Future<void> _syncConversationMeta() async {
+    if (_conversationId == null || _conversationId!.isEmpty) {
+      return;
+    }
+    await _chatHistoryStore.updateActiveConversationMeta(
+      localDeviceName: deviceName,
+      localAddress: _buildLocalAddress(
+        ipController.text.trim(),
+        int.tryParse(portController.text.trim()),
+      ),
+      peerName: _browserPeerName ?? _pairingPayload?.browserName,
+      peerDeviceInfo: _browserPeerDeviceInfo ?? _pairingPayload?.deviceInfo,
+    );
+  }
+
+  String? _buildLocalAddress(String ip, int? port) {
+    if (ip.trim().isEmpty || port == null || port <= 0) {
+      return null;
+    }
+    return '${ip.trim()}:$port';
+  }
+
+  void _trimRetainedMessages() {
+    if (_messages.length <= _maxRetainedMessages) {
+      return;
+    }
+
+    var removableIndex = 0;
+    while (_messages.length > _maxRetainedMessages &&
+        removableIndex < _messages.length) {
+      final message = _messages[removableIndex];
+      if (_canDiscardFromTimeline(message)) {
+        _messages.removeAt(removableIndex);
+        continue;
+      }
+      removableIndex += 1;
+    }
+  }
+
+  bool _canDiscardFromTimeline(ChatMessage message) {
+    if (message.isSystem) {
+      return false;
+    }
+    if (message.type != 'file') {
+      return true;
+    }
+    final progress = message.progress;
+    return progress == null || progress >= 1;
   }
 
   Future<String> saveFileMessageToGallery(ChatMessage message) async {
@@ -685,7 +785,9 @@ class ChatSessionProvider extends ChangeNotifier {
   }
 
   Future<String> saveFileMessagesToGallery(List<ChatMessage> messages) async {
-    final files = messages.where((message) => message.type == 'file').toList(growable: false);
+    final files = messages
+        .where((message) => message.type == 'file')
+        .toList(growable: false);
     if (files.isEmpty) {
       throw Exception('没有可保存的文件');
     }
@@ -711,7 +813,9 @@ class ChatSessionProvider extends ChangeNotifier {
   }
 
   Future<String> exportFileMessages(List<ChatMessage> messages) async {
-    final files = messages.where((message) => message.type == 'file').toList(growable: false);
+    final files = messages
+        .where((message) => message.type == 'file')
+        .toList(growable: false);
     if (files.isEmpty) {
       throw Exception('没有可保存的文件');
     }
@@ -727,7 +831,8 @@ class ChatSessionProvider extends ChangeNotifier {
           directory: directory,
           data: bytes,
           fileName: message.text,
-          mimeType: message.mimeType ?? _inferMimeType(_extensionOf(message.text)),
+          mimeType:
+              message.mimeType ?? _inferMimeType(_extensionOf(message.text)),
           replace: false,
         );
       }
@@ -753,7 +858,9 @@ class ChatSessionProvider extends ChangeNotifier {
   }
 
   Future<String> saveFileMessagesAsZip(List<ChatMessage> messages) async {
-    final files = messages.where((message) => message.type == 'file').toList(growable: false);
+    final files = messages
+        .where((message) => message.type == 'file')
+        .toList(growable: false);
     if (files.isEmpty) {
       throw Exception('没有可压缩的文件');
     }

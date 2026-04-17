@@ -6,8 +6,6 @@ import { MessageList } from './MessageList'
 import { ChatSidebar } from './ChatSidebar'
 
 type ChatScreenProps = {
-  browserIp: string
-  browserPort: string
   canCompose: boolean
   canSend: boolean
   conversationTitle: string
@@ -19,8 +17,6 @@ type ChatScreenProps = {
   localDeviceName: string
   messages: Message[]
   pendingAttachments: PendingAttachment[]
-  phoneIp: string
-  phonePort: string
   settings: AppSettings
   onAppendFiles: (files: File[]) => void
   onDisconnect: () => void
@@ -35,8 +31,6 @@ type ChatScreenProps = {
 }
 
 export function ChatScreen({
-  browserIp,
-  browserPort,
   canCompose,
   canSend,
   conversationTitle,
@@ -48,8 +42,6 @@ export function ChatScreen({
   localDeviceName,
   messages,
   pendingAttachments,
-  phoneIp,
-  phonePort,
   settings,
   onAppendFiles,
   onDisconnect,
@@ -82,15 +74,11 @@ export function ChatScreen({
   return (
     <section className="chat-layout">
       <ChatSidebar
-        browserIp={browserIp}
         browserDeviceInfo={localDeviceInfo}
         browserName={localDeviceName}
-        browserPort={browserPort}
         connectionState={connectionState}
         error={error}
-        phoneIp={phoneIp}
         phoneName={conversationTitle}
-        phonePort={phonePort}
         onDisconnect={onDisconnect}
       />
 

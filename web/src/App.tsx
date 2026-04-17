@@ -7,14 +7,9 @@ import './App.css'
 function App() {
   const browserName = getBrowserName(navigator.userAgent)
   const deviceInfo = getDeviceInfo(navigator.userAgent)
-  const currentLocation = window.location
-  const browserIp = currentLocation.hostname || '未知'
-  const browserPort =
-    currentLocation.port || (currentLocation.protocol === 'https:' ? '443' : '80')
   const {
     canCompose,
     canSend,
-    connectionAddress,
     connectionState,
     conversationTitle,
     countdown,
@@ -37,7 +32,6 @@ function App() {
     sendMessage,
     setDraft,
   } = useEasyChat()
-  const { host: phoneIp, port: phonePort } = parseHostPort(connectionAddress)
 
   return (
     <main className={`app-frame ${phase === 'pairing' ? 'app-frame-pairing' : ''}`}>
@@ -50,8 +44,6 @@ function App() {
         />
       ) : (
         <ChatScreen
-          browserIp={browserIp}
-          browserPort={browserPort}
           canCompose={canCompose}
           canSend={canSend}
           connectionState={connectionState}
@@ -63,8 +55,6 @@ function App() {
           localDeviceName={browserName}
           messages={visibleMessages}
           pendingAttachments={pendingAttachments}
-          phoneIp={phoneIp}
-          phonePort={phonePort}
           settings={settings}
           onAppendFiles={appendPendingFiles}
           onCancelBatchTransfers={cancelBatchTransfers}
@@ -80,20 +70,6 @@ function App() {
       )}
     </main>
   )
-}
-
-function parseHostPort(address: string) {
-  if (!address || !address.includes(':')) {
-    return { host: address || '等待连接', port: '等待连接' }
-  }
-  const lastColon = address.lastIndexOf(':')
-  if (lastColon <= 0 || lastColon >= address.length - 1) {
-    return { host: address || '等待连接', port: '等待连接' }
-  }
-  return {
-    host: address.slice(0, lastColon),
-    port: address.slice(lastColon + 1),
-  }
 }
 
 export default App

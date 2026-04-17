@@ -168,7 +168,7 @@ export class DirectTransportClient {
   sendPeerMeta(meta: {
     role: 'phone' | 'browser'
     name: string
-    address: string
+    address?: string
     deviceInfo?: string
   }) {
     const socket = this.requireOpenSocket()
@@ -287,13 +287,13 @@ export class DirectTransportClient {
     }
 
     if (payload.type === 'peer_meta') {
-      if (!payload.role || !payload.name || !payload.address) {
+      if (!payload.role || !payload.name) {
         return
       }
       this.callbacks.onPeerMeta({
         role: payload.role,
         name: payload.name,
-        address: payload.address,
+        address: payload.address ?? '',
         deviceInfo: payload.deviceInfo,
       })
       return

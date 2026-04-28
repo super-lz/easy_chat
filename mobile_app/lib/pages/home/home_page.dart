@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
+import '../../provider/chat_session_provider.dart';
 import '../../route/route_paths.dart';
 
 class HomePage extends StatelessWidget {
@@ -8,6 +10,8 @@ class HomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final activeSession = _ActiveSessionViewData.select(context);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F7),
       body: SafeArea(
@@ -27,17 +31,6 @@ class HomePage extends StatelessWidget {
               ),
               const SizedBox(height: 18),
               const Text(
-                '扫码连接',
-                style: TextStyle(
-                  color: Color(0xFF151B26),
-                  fontSize: 42,
-                  fontWeight: FontWeight.w700,
-                  height: 1.02,
-                  letterSpacing: -1,
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
                 '扫描网页上的二维码，在手机和电脑之间建立本地直连',
                 style: TextStyle(
                   color: Color(0xFF8B95A1),
@@ -47,6 +40,17 @@ class HomePage extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 22),
+              if (activeSession.hasCachedConnection) ...[
+                _EntryCard(
+                  icon: Icons.chat_bubble_rounded,
+                  iconBackground: const Color(0xFFE8FBF1),
+                  iconColor: const Color(0xFF2F9E67),
+                  title: '当前会话',
+                  subtitle: activeSession.subtitle,
+                  onTap: () => context.go(RoutePaths.chat),
+                ),
+                const SizedBox(height: 12),
+              ],
               _EntryCard(
                 icon: Icons.history_rounded,
                 iconBackground: const Color(0xFFE8F4FB),
@@ -81,6 +85,58 @@ class HomePage extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ActiveSessionViewData {
+  const _ActiveSessionViewData({
+    required this.hasCachedConnection,
+    required this.subtitle,
+  });
+
+  final bool hasCachedConnection;
+  final String subtitle;
+
+  static _ActiveSessionViewData select(BuildContext context) {
+    return context.select<ChatSessionProvider, _ActiveSessionViewData>(
+      (provider) => _ActiveSessionViewData(
+        hasCachedConnection: provider.hasCachedConnection,
+        subtitle: _buildSubtitle(provider),
+      ),
+    );
+  }
+
+  static String _buildSubtitle(ChatSessionProvider provider) {
+    final target = _resolveTargetName(provider);
+    final status = provider.serverStatus.trim();
+    if (status.isEmpty) {
+      return target;
+    }
+    return '$target · $status';
+  }
+
+  static String _resolveTargetName(ChatSessionProvider provider) {
+    final deviceInfo = provider.browserPeerDeviceInfo.trim();
+    if (deviceInfo.isNotEmpty && deviceInfo != '等待浏览器同步') {
+      return deviceInfo;
+    }
+
+    final browserName = provider.browserPeerName.trim();
+    if (browserName.isNotEmpty && browserName != '等待浏览器同步') {
+      return browserName;
+    }
+
+    return '等待目标设备同步';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is _ActiveSessionViewData &&
+        other.hasCachedConnection == hasCachedConnection &&
+        other.subtitle == subtitle;
+  }
+
+  @override
+  int get hashCode => Object.hash(hasCachedConnection, subtitle);
 }
 
 class _EntryCard extends StatelessWidget {

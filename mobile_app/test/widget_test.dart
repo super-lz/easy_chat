@@ -7,6 +7,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('EasyChat'), findsOneWidget);
-    expect(find.text('扫码连接'), findsOneWidget);
+    expect(find.text('扫码'), findsOneWidget);
   });
 }

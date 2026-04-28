@@ -33,6 +33,7 @@ class ConfirmPage extends StatelessWidget {
       child: Scaffold(
         backgroundColor: const Color(0xFFF3F4F7),
         body: SafeArea(
+          bottom: false,
           child: Column(
             children: [
               Expanded(
@@ -111,7 +112,12 @@ class ConfirmPage extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  12,
+                  20,
+                  18 + MediaQuery.of(context).padding.bottom,
+                ),
                 color: const Color(0xFFF7F8FA),
                 child: Row(
                   children: [
@@ -162,7 +168,13 @@ class ConfirmPage extends StatelessWidget {
   }
 
   Future<void> _approve(BuildContext context) async {
-    final success = await context.read<ChatSessionProvider>().registerPhone();
+    final provider = context.read<ChatSessionProvider>();
+    if (provider.hasCachedConnection) {
+      final shouldSwitch = await _confirmSwitchSession(context);
+      if (!context.mounted || !shouldSwitch) return;
+    }
+
+    final success = await provider.registerPhone();
     if (!context.mounted) return;
     if (success) {
       context.go(RoutePaths.chat);
@@ -257,6 +269,89 @@ class ConfirmPage extends StatelessWidget {
                           ),
                         ),
                         child: const Text('中断'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    return result ?? false;
+  }
+
+  Future<bool> _confirmSwitchSession(BuildContext context) async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: const Color(0x3D101828),
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+            ),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '切换会话？',
+                  style: TextStyle(
+                    color: Color(0xFF151B26),
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  '当前会话会断开并保留到聊天记录，确认后只连接这台新设备。',
+                  style: TextStyle(
+                    color: Color(0xFF66717D),
+                    fontSize: 14,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(false),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF5B6470),
+                          side: BorderSide.none,
+                          elevation: 0,
+                          backgroundColor: const Color(0xFFF3F5F7),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: const Text('取消'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(true),
+                        style: FilledButton.styleFrom(
+                          elevation: 0,
+                          backgroundColor: const Color(0xFF169AF3),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: const Text('切换'),
                       ),
                     ),
                   ],

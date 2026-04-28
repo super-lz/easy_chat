@@ -330,6 +330,11 @@ class ChatSessionProvider extends ChangeNotifier {
       phoneIp,
     );
 
+    await _closeCurrentSessionForSwitch();
+    if (!_isActiveRegistrationAttempt(attemptId)) {
+      return false;
+    }
+
     try {
       await _chatServer.start(port: port, token: token);
     } catch (error) {
@@ -372,6 +377,8 @@ class ChatSessionProvider extends ChangeNotifier {
         peerDeviceInfo: pairingPayload.deviceInfo,
       );
       _conversationId = conversationId;
+      _browserPeerName = pairingPayload.browserName;
+      _browserPeerDeviceInfo = pairingPayload.deviceInfo;
 
       final cache = ConnectionCache(
         deviceName: deviceController.text.trim(),
@@ -429,6 +436,30 @@ class ChatSessionProvider extends ChangeNotifier {
     _pendingAttachments.clear();
     await _chatServer.stop();
     await _chatHistoryStore.closeActiveConversation();
+    _messages
+      ..clear()
+      ..addAll(initialMessages);
+    _safeNotify();
+  }
+
+  Future<void> _closeCurrentSessionForSwitch() async {
+    if (!_hasCachedConnection &&
+        _conversationId == null &&
+        !_chatServer.isRunning) {
+      return;
+    }
+
+    _chatServer.sendDisconnectNotice();
+    await _chatServer.stop();
+    await _persistence.clear();
+    await _chatHistoryStore.closeActiveConversation();
+    _hasCachedConnection = false;
+    _directToken = null;
+    _conversationId = null;
+    _browserPeerName = null;
+    _browserPeerAddress = null;
+    _browserPeerDeviceInfo = null;
+    _pendingAttachments.clear();
     _messages
       ..clear()
       ..addAll(initialMessages);
@@ -691,6 +722,7 @@ class ChatSessionProvider extends ChangeNotifier {
     }
 
     await _chatHistoryStore.openConversation(conversationId);
+    _restoreCachedPeerMeta();
     final messages = await _chatHistoryStore.loadRecentMessages(
       conversationId,
       limit: _maxRetainedMessages,
@@ -698,6 +730,28 @@ class ChatSessionProvider extends ChangeNotifier {
     _messages
       ..clear()
       ..addAll(messages);
+  }
+
+  void _restoreCachedPeerMeta() {
+    final summary = _chatHistoryStore.activeConversationSummary;
+    if (summary == null) {
+      return;
+    }
+
+    final peerName = summary.peerName?.trim();
+    if (peerName != null && peerName.isNotEmpty) {
+      _browserPeerName = peerName;
+    }
+
+    final peerDeviceInfo = summary.peerDeviceInfo?.trim();
+    if (peerDeviceInfo != null && peerDeviceInfo.isNotEmpty) {
+      _browserPeerDeviceInfo = peerDeviceInfo;
+    }
+
+    final title = summary.title.trim();
+    if (title.isNotEmpty && title != '未命名会话') {
+      _browserPeerDeviceInfo ??= title;
+    }
   }
 
   Future<void> _syncConversationMeta() async {

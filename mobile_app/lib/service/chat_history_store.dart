@@ -52,6 +52,8 @@ class ChatHistoryStore {
   }
 
   String? get activeConversationId => _activeConversation?.summary.id;
+  ChatHistoryConversationSummary? get activeConversationSummary =>
+      _activeConversation?.summary;
 
   Future<void> updateActiveConversationMeta({
     String? localDeviceName,

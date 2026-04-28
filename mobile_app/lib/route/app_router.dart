@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:go_router/go_router.dart';
 
 import '../pages/chat/chat_page.dart';
@@ -17,30 +17,63 @@ GoRouter createAppRouter() {
     routes: [
       GoRoute(
         path: RoutePaths.home,
-        builder: (context, state) => const HomePage(),
-      ),
-      GoRoute(
-        path: RoutePaths.scan,
-        builder: (context, state) => const ScannerPage(),
-      ),
-      GoRoute(
-        path: RoutePaths.confirm,
-        builder: (context, state) => const ConfirmPage(),
-      ),
-      GoRoute(
-        path: RoutePaths.chat,
-        builder: (context, state) => const ChatPage(),
-      ),
-      GoRoute(
-        path: RoutePaths.history,
-        builder: (context, state) => const HistoryPage(),
-      ),
-      GoRoute(
-        path: '${RoutePaths.history}/:conversationId',
-        builder: (context, state) => HistoryConversationPage(
-          conversationId: state.pathParameters['conversationId'] ?? '',
-        ),
+        pageBuilder: (context, state) =>
+            _cupertinoTransitionPage(state, const HomePage()),
+        routes: [
+          GoRoute(
+            path: _relativePath(RoutePaths.scan),
+            pageBuilder: (context, state) =>
+                _cupertinoTransitionPage(state, const ScannerPage()),
+          ),
+          GoRoute(
+            path: _relativePath(RoutePaths.confirm),
+            pageBuilder: (context, state) =>
+                _cupertinoTransitionPage(state, const ConfirmPage()),
+          ),
+          GoRoute(
+            path: _relativePath(RoutePaths.chat),
+            pageBuilder: (context, state) =>
+                _cupertinoTransitionPage(state, const ChatPage()),
+          ),
+          GoRoute(
+            path: _relativePath(RoutePaths.history),
+            pageBuilder: (context, state) =>
+                _cupertinoTransitionPage(state, const HistoryPage()),
+          ),
+          GoRoute(
+            path: '${_relativePath(RoutePaths.history)}/:conversationId',
+            pageBuilder: (context, state) => _cupertinoTransitionPage(
+              state,
+              HistoryConversationPage(
+                conversationId: state.pathParameters['conversationId'] ?? '',
+              ),
+            ),
+          ),
+        ],
       ),
     ],
   );
+}
+
+Page<void> _cupertinoTransitionPage(GoRouterState state, Widget child) {
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    child: child,
+    transitionDuration: const Duration(milliseconds: 300),
+    reverseTransitionDuration: const Duration(milliseconds: 300),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      return CupertinoPageTransition(
+        primaryRouteAnimation: animation,
+        secondaryRouteAnimation: secondaryAnimation,
+        linearTransition: false,
+        child: child,
+      );
+    },
+  );
+}
+
+String _relativePath(String absolutePath) {
+  return absolutePath.startsWith('/')
+      ? absolutePath.substring(1)
+      : absolutePath;
 }
